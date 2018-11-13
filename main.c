@@ -1,5 +1,4 @@
 #include "graph_from_edge_list.h"
-#include "graph.h"
 #include "bfs.h"
 
 int main(int argc, char ** argv)

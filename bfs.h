@@ -16,13 +16,13 @@ typedef struct sliding_queue
 } sliding_queue;
 
 // Switch to remote write algorithm
-replicated long bfs_use_remote_writes;
+extern replicated long bfs_use_remote_writes;
 // For each vertex, parent in the BFS tree.
-replicated long * bfs_parent;
+extern replicated long * bfs_parent;
 // Temporary copy of parent array
-replicated long * bfs_new_parent;
+extern replicated long * bfs_new_parent;
 // Used to store vertices to visit in the next frontier
-replicated sliding_queue bfs_queue;
+extern replicated sliding_queue bfs_queue;
 
 
 void bfs_run (long source);

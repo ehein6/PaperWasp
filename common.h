@@ -3,6 +3,8 @@
 // Helper functions
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <stdbool.h>
 #include <emu_c_utils/emu_c_utils.h>
 
 // Logging macro. Flush right away since Emu hardware usually doesn't

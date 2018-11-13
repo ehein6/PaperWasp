@@ -8,6 +8,33 @@
 
 #include "graph.h"
 
+replicated long num_edges;
+replicated long num_vertices;
+
+// Global data structures
+
+// Distributed edge list that the graph will be created from.
+// First array stores source vertex ID, second array stores dest vertex ID
+replicated long * dist_edge_list_src;
+replicated long * dist_edge_list_dst;
+
+// Distributed vertex array
+// number of vertex_neighbors for this vertex (in the en
+replicated long * vertex_out_degree;
+// Pointer to edge block for this vertex
+// Light vertices: points to a local edge block
+// Heavy vertices: points to a stripe
+replicated edge_block ** vertex_neighbors;
+
+// Total number of edges stored on each nodelet
+replicated long num_local_edges;
+// Pointer to stripe of memory where edges are stored
+replicated long * edge_storage;
+// Pointer to un-reserved edge storage in local stripe
+replicated long * next_edge_storage;
+
+replicated long heavy_threshold;
+
 int64_t
 count_edges(const char* path)
 {
@@ -82,7 +109,7 @@ compute_edge_blocks_sizes_worker(long * array, long begin, long end, va_list arg
             long dst = dist_edge_list_dst[i];
             edge_block * local_eb = mw_get_localto(vertex_neighbors[src], &vertex_neighbors[dst]);
             // Increment the edge count
-            ATOMIC_ADD(&local_eb->num_edges, 1);
+            ATOMIC_ADDMS(&local_eb->num_edges, 1);
         }
     }
 }
@@ -101,12 +128,12 @@ count_local_edges_worker(long * array, long begin, long end, va_list args)
                 edge_block * local_eb = mw_get_nth(vertex_neighbors[vertex_id], nodelet_id);
                 long my_local_edges = local_eb->num_edges;
                 // Add to the counter on this nodelet
-                ATOMIC_ADD(&num_local_edges, my_local_edges);
+                ATOMIC_ADDMS(&num_local_edges, my_local_edges);
             }
         } else {
             // Local vertices have one edge block on the local nodelet
             long my_local_edges = vertex_neighbors[vertex_id]->num_edges;
-            ATOMIC_ADD(&num_local_edges, my_local_edges);
+            ATOMIC_ADDMS(&num_local_edges, my_local_edges);
         }
     }
 }
@@ -184,7 +211,7 @@ carve_edge_storage_worker(long * array, long begin, long end, va_list args)
         } else {
             // Local vertices have one edge block on the local nodelet
             long my_local_edges = vertex_neighbors[vertex_id]->num_edges;
-            ATOMIC_ADD(&num_local_edges, my_local_edges);
+            ATOMIC_ADDMS(&num_local_edges, my_local_edges);
         }
     }
 }

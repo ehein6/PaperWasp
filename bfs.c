@@ -5,6 +5,16 @@
 #include <emu_c_utils/emu_c_utils.h>
 #include <stdio.h>
 
+// Switch to remote write algorithm
+replicated long bfs_use_remote_writes;
+// For each vertex, parent in the BFS tree.
+replicated long * bfs_parent;
+// Temporary copy of parent array
+replicated long * bfs_new_parent;
+// Used to store vertices to visit in the next frontier
+replicated sliding_queue bfs_queue;
+
+
 void sliding_queue_replicated_init(sliding_queue * self, long size);
 void sliding_queue_replicated_deinit(sliding_queue * self);
 void sliding_queue_replicated_reset(sliding_queue * self);

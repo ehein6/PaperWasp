@@ -24,29 +24,29 @@ typedef struct edge_block {
     long * edges;
 } edge_block;
 
-replicated long num_edges;
-replicated long num_vertices;
+extern replicated long num_edges;
+extern replicated long num_vertices;
 
 // Global data structures
 
 // Distributed edge list that the graph will be created from.
 // First array stores source vertex ID, second array stores dest vertex ID
-replicated long * dist_edge_list_src;
-replicated long * dist_edge_list_dst;
+extern replicated long * dist_edge_list_src;
+extern replicated long * dist_edge_list_dst;
 
 // Distributed vertex array
 // number of vertex_neighbors for this vertex (in the en
-replicated long * vertex_out_degree;
+extern replicated long * vertex_out_degree;
 // Pointer to edge block for this vertex
 // Light vertices: points to a local edge block
 // Heavy vertices: points to a stripe
-replicated edge_block ** vertex_neighbors;
+extern replicated edge_block ** vertex_neighbors;
 
 // Total number of edges stored on each nodelet
-replicated long num_local_edges;
+extern replicated long num_local_edges;
 // Pointer to stripe of memory where edges are stored
-replicated long * edge_storage;
+extern replicated long * edge_storage;
 // Pointer to un-reserved edge storage in local stripe
-replicated long * next_edge_storage;
+extern replicated long * next_edge_storage;
 
-replicated long heavy_threshold;
+extern replicated long heavy_threshold;
