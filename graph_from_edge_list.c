@@ -213,6 +213,14 @@ fill_edge_blocks_worker(long * array, long begin, long end, va_list args)
     }
 }
 
+void scatter_edge_list_worker(long begin, long end, va_list args)
+{
+    edge_list * el = va_arg(args, edge_list*);
+    for (long i = begin; i < end; ++i) {
+        dist_edge_list_src[i] = el->edges[i].src;
+        dist_edge_list_dst[i] = el->edges[i].dst;
+    }
+}
 
 void
 load_graph_from_edge_list(const char* filename)
@@ -230,7 +238,11 @@ load_graph_from_edge_list(const char* filename)
 
     LOG("Initializing distributed edge list...\n");
     // Scatter from local to distributed edge list
-    // FIXME
+    hooks_region_begin("scatter_edge_list");
+    emu_local_for(0, num_edges, LOCAL_GRAIN_MIN(num_edges, 256),
+        scatter_edge_list_worker, &el
+    );
+    hooks_region_end();
 
     LOG("Initializing distributed vertex list...\n");
     // Create and initialize distributed vertex list

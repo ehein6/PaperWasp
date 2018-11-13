@@ -23,4 +23,4 @@ add_executable(bfs
     graph.h
     graph_from_edge_list.c graph_from_edge_list.h
     bfs.c
-    main.c)
+    main.c emu_1d_scatter_gather.c emu_1d_scatter_gather.h)
