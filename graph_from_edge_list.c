@@ -206,12 +206,17 @@ carve_edge_storage_worker(long * array, long begin, long end, va_list args)
                 edge_block * local_eb = mw_get_nth(vertex_neighbors[vertex_id], nodelet_id);
                 long my_local_edges = local_eb->num_edges;
                 // Carve out a chunk for myself
-                ATOMIC_ADDMS_PTR(&next_edge_storage, my_local_edges);
+                local_eb->edges = ATOMIC_ADDMS_PTR(&next_edge_storage, my_local_edges);
+                // HACK Prepare to fill
+                local_eb->num_edges = 0;
             }
         } else {
             // Local vertices have one edge block on the local nodelet
-            long my_local_edges = vertex_neighbors[vertex_id]->num_edges;
-            ATOMIC_ADDMS(&num_local_edges, my_local_edges);
+            edge_block * local_eb = vertex_neighbors[vertex_id];
+            long my_local_edges = local_eb->num_edges;
+            local_eb->edges = ATOMIC_ADDMS_PTR(&next_edge_storage, my_local_edges);
+            // HACK Prepare to fill
+            local_eb->num_edges = 0;
         }
     }
 }
