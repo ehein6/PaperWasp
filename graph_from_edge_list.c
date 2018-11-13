@@ -194,6 +194,13 @@ long compute_max_edges_per_nodelet()
     return max_edges_per_nodelet;
 }
 
+static inline long *
+grab_edges(long * volatile * ptr, long num_edges)
+{
+    // Atomic add only works on long integers, we need to use it on a long*
+    return (long*)ATOMIC_ADDMS((volatile long *)ptr, num_edges * sizeof(long));
+}
+
 void
 carve_edge_storage_worker(long * array, long begin, long end, va_list args)
 {
@@ -204,17 +211,15 @@ carve_edge_storage_worker(long * array, long begin, long end, va_list args)
             // TODO could avoid some migrations here by giving each local edge block to a local iteration
             for (long nodelet_id = 0; nodelet_id < NODELETS(); ++nodelet_id) {
                 edge_block * local_eb = mw_get_nth(vertex_neighbors[vertex_id], nodelet_id);
-                long my_local_edges = local_eb->num_edges;
                 // Carve out a chunk for myself
-                local_eb->edges = ATOMIC_ADDMS_PTR(&next_edge_storage, my_local_edges);
+                local_eb->edges = grab_edges(&next_edge_storage, local_eb->num_edges);
                 // HACK Prepare to fill
                 local_eb->num_edges = 0;
             }
         } else {
             // Local vertices have one edge block on the local nodelet
             edge_block * local_eb = vertex_neighbors[vertex_id];
-            long my_local_edges = local_eb->num_edges;
-            local_eb->edges = ATOMIC_ADDMS_PTR(&next_edge_storage, my_local_edges);
+            local_eb->edges = grab_edges(&next_edge_storage, local_eb->num_edges);
             // HACK Prepare to fill
             local_eb->num_edges = 0;
         }
