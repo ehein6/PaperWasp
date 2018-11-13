@@ -68,7 +68,7 @@ load_edge_list_binary(const char* path)
         exit(1);
     }
 
-    LOG("Preloading %li edges from %s...", num_edges, path);
+    LOG("Preloading %li edges from %s...\n", num_edges, path);
     size_t rc = fread(&el.edges[0], sizeof(edge), num_edges, fp);
     if (rc != num_edges) {
         LOG("Failed to load edge list from %s\n",path);
@@ -274,6 +274,7 @@ load_graph_from_edge_list(const char* filename)
     LOG("Initializing distributed vertex list...\n");
     // Create and initialize distributed vertex list
     init_striped_array(&vertex_out_degree, num_vertices);
+    init_striped_array((long**)&vertex_neighbors, num_vertices);
 
     // TODO set grain more intelligently
     // Grain size to use when scanning the edge list
