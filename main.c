@@ -12,6 +12,9 @@ int main(int argc, char ** argv)
 
     load_graph_from_edge_list(argv[1]);
 
+    LOG("Initializing BFS data structures...\n");
+    bfs_init(true);
+
     long source = 0;
     LOG("Doing breadth-first search from vertex %li\n", source);
     hooks_set_attr_i64("source_vertex", source);

@@ -24,6 +24,7 @@ extern replicated long * bfs_new_parent;
 // Used to store vertices to visit in the next frontier
 extern replicated sliding_queue bfs_queue;
 
-
+void bfs_init(long use_remote_writes);
 void bfs_run (long source);
+void bfs_deinit();
 

@@ -131,7 +131,7 @@ bfs_data_clear()
 }
 
 
-void bfs_data_replicated_init(long nv, long use_remote_writes)
+void bfs_init(long use_remote_writes)
 {
     mw_replicated_init(&bfs_use_remote_writes, use_remote_writes);
     init_striped_array(&bfs_parent, num_vertices);
@@ -141,7 +141,7 @@ void bfs_data_replicated_init(long nv, long use_remote_writes)
 }
 
 void
-bfs_data_replicated_deinit()
+bfs_deinit()
 {
     mw_free(bfs_parent);
     mw_free(bfs_new_parent);
