@@ -80,6 +80,15 @@ load_edge_list_binary(const char* path)
 
 
 void
+clear_striped_array_worker(long * array, long begin, long end, va_list args)
+{
+    for (long i = begin; i < end; i += NODELETS()) {
+        array[i] = 0;
+    }
+}
+
+
+void
 calculate_degrees_worker(long * array, long begin, long end, va_list args)
 {
     (void)array;
@@ -189,6 +198,7 @@ long compute_max_edges_per_nodelet()
         REMOTE_MAX(&max_edges_per_nodelet, num_edges_on_nodelet);
         REMOTE_ADD(&check_total_edges, num_edges_on_nodelet);
     }
+
     // Double-check that we haven't lost any edges
     assert(check_total_edges == num_edges);
     return max_edges_per_nodelet;
@@ -293,9 +303,13 @@ load_graph_from_edge_list(const char* filename)
     long vertex_list_grain = GLOBAL_GRAIN_MIN(num_vertices, 64);
 
     // Compute degree of each vertex
-    // Scans the edge list and does remote atomic adds into vertex_out_degree
     LOG("Computing degree of each vertex...\n");
     hooks_region_begin("calculate_degrees");
+    // Initialize the degree of each vertex to zero
+    emu_1d_array_apply(vertex_out_degree, num_vertices, vertex_list_grain,
+        clear_striped_array_worker
+    );
+    // Scan the edge list and do remote atomic adds into vertex_out_degree
     emu_1d_array_apply(dist_edge_list_src, num_edges, edge_list_grain,
         calculate_degrees_worker
     );
