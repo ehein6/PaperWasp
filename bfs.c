@@ -148,31 +148,73 @@ bfs_deinit()
     sliding_queue_replicated_deinit(&bfs_queue);
 }
 
-// Each vertex in the queue tries to set itself as the parent of each of its vertex_neighbors
-void
-mark_neighbors_spawner(long begin, long end, va_list args)
+// Core of the remote-writes BFS variant
+// Fire off a remote write for each edge in the frontier
+// This write travels to the home node for the destination vertex,
+// setting the source vertex as its parent
+static inline void
+mark_neighbors(long src, long * edges_begin, long * edges_end)
 {
-    long * buffer = va_arg(args, long*);
-    for (long i = begin; i < end; ++i) {
-        // Get the local edge block
-        long src = buffer[i];
-        edge_block * eb = vertex_neighbors[src];
-        // Fire off a remote write for each edge in the block
-        // TODO can parallelize this loop
-        for (long j = 0; j < eb->num_edges; ++j) {
-            long dst = eb->edges[j];
-            bfs_new_parent[dst] = src;
-        }
-
+    for (long * e = edges_begin; e < edges_end; ++e) {
+        long dst = *e;
+        bfs_new_parent[dst] = src; // Remote write
     }
 }
 
-// Spawn threads to call mark_neighbors_worker for each vertex in the local queue
+// Wrapper for emu_local_for to call mark_neighbors
+void
+mark_neighbors_worker(long begin, long end, va_list args)
+{
+    long src = va_arg(args, long);
+    long * edges_begin = va_arg(args, long*);
+    long * edges_end = edges_begin + (end - begin);
+    mark_neighbors(src, edges_begin, edges_end);
+}
+
+// Marks all neighbors in an edge block in parallel
+void
+mark_neighbors_in_eb(long src, edge_block * eb)
+{
+    emu_local_for(0, eb->num_edges, LOCAL_GRAIN_MIN(eb->num_edges, 1024),
+        mark_neighbors_worker, src, eb->edges
+    );
+}
+
+// Spawns threads to call mark_neighbors in parallel over a slice of the frontier
+void
+mark_queue_neighbors_worker(long begin, long end, va_list args)
+{
+    // For each vertex in our slice of the queue...
+    long * vertex_queue = va_arg(args, long*);
+    for (long v = begin; v < end; ++v) {
+        long src = vertex_queue[v];
+        // Get pointer to local edge block
+        edge_block * eb = vertex_neighbors[src];
+
+        // How big is this vertex?
+        if (is_heavy(src)) {
+            // Spawn a thread for each remote edge block
+            for (long i = 0; i < NODELETS(); ++i) {
+                edge_block * remote_eb = mw_get_nth(eb, i);
+                /* cilk_spawn_at(remote_eb) */ mark_neighbors_in_eb(src, remote_eb);
+            }
+        } else if (vertex_out_degree[src] > 16384) { // TODO magic number
+            // Spawn threads for the local edge block
+            /* cilk_spawn */ mark_neighbors_in_eb(src, eb);
+        } else {
+            // Handle the edge block in this thread
+            mark_neighbors(src, eb->edges, eb->edges + eb->num_edges);
+        }
+    }
+}
+
+// Spawns threads to call mark_neighbors over the entire local frontier
+//
 void
 mark_queue_neighbors(sliding_queue * queue)
 {
-    emu_local_for(queue->start, queue->end, LOCAL_GRAIN(queue->end - queue->start),
-        mark_neighbors_spawner, queue->buffer
+    emu_local_for(queue->start, queue->end, LOCAL_GRAIN_MIN(queue->end - queue->start, 64),
+        mark_queue_neighbors_worker, queue->buffer
     );
 }
 
@@ -311,7 +353,7 @@ bfs_run (long source)
             cilk_sync;
         }
 
-//        dump_queue_stats(self, graph);
+        // dump_queue_stats();
 
         // Slide all queues to explore the next frontier
         sliding_queue_slide_all_windows(&bfs_queue);

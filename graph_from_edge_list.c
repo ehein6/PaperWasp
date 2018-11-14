@@ -99,13 +99,6 @@ calculate_degrees_worker(long * array, long begin, long end, va_list args)
     }
 }
 
-bool
-is_heavy(long vertex_id)
-{
-    // TODO it would be great if this were a local query, maybe a replicated bitmap?
-    return vertex_out_degree[vertex_id] >= heavy_threshold;
-}
-
 void
 compute_edge_blocks_sizes_worker(long * array, long begin, long end, va_list args)
 {

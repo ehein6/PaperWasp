@@ -8,6 +8,11 @@ int main(int argc, char ** argv)
         exit(1);
     }
 
+    const char* active_region = getenv("HOOKS_ACTIVE_REGION");
+    if (active_region != NULL) {
+        hooks_set_active_region(active_region);
+    }
+
     mw_replicated_init(&heavy_threshold, atoi(argv[2]));
 
     load_graph_from_edge_list(argv[1]);

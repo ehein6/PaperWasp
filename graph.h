@@ -50,3 +50,10 @@ extern replicated long * edge_storage;
 extern replicated long * next_edge_storage;
 
 extern replicated long heavy_threshold;
+
+static inline bool
+is_heavy(long vertex_id)
+{
+    // TODO it would be great if this were a local query, maybe a replicated bitmap?
+    return vertex_out_degree[vertex_id] >= heavy_threshold;
+}
