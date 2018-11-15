@@ -5,15 +5,8 @@
 #include <emu_c_utils/emu_c_utils.h>
 #include <stdio.h>
 
-// Switch to remote write algorithm
-replicated long bfs_use_remote_writes;
-// For each vertex, parent in the BFS tree.
-replicated long * bfs_parent;
-// Temporary copy of parent array
-replicated long * bfs_new_parent;
-// Used to store vertices to visit in the next frontier
-replicated sliding_queue bfs_queue;
-
+// Global replicated struct with BFS data pointers
+replicated bfs_data BFS;
 
 void sliding_queue_replicated_init(sliding_queue * self, long size);
 void sliding_queue_replicated_deinit(sliding_queue * self);
@@ -114,8 +107,8 @@ clear_worker(long * array, long begin, long end, va_list args)
     (void)array;
     const long nodelets = NODELETS();
     for (long i = begin; i < end; i += nodelets) {
-        bfs_parent[i] = -1;
-        bfs_new_parent[i] = -1;
+        BFS.parent[i] = -1;
+        BFS.new_parent[i] = -1;
     }
 }
 
@@ -124,28 +117,28 @@ bfs_data_clear()
 {
 //    emu_1d_array_set_long(&self->level, -1);
 //    emu_1d_array_set_long(&self->marks, 0);
-    emu_1d_array_apply(bfs_parent, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 256),
+    emu_1d_array_apply(BFS.parent, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 256),
         clear_worker
     );
-    sliding_queue_replicated_reset(&bfs_queue);
+    sliding_queue_replicated_reset(&BFS.queue);
 }
 
 
 void bfs_init(long use_remote_writes)
 {
-    mw_replicated_init(&bfs_use_remote_writes, use_remote_writes);
-    init_striped_array(&bfs_parent, G.num_vertices);
-    init_striped_array(&bfs_new_parent, G.num_vertices);
-    sliding_queue_replicated_init(&bfs_queue, G.num_vertices);
+    mw_replicated_init(&BFS.use_remote_writes, use_remote_writes);
+    init_striped_array(&BFS.parent, G.num_vertices);
+    init_striped_array(&BFS.new_parent, G.num_vertices);
+    sliding_queue_replicated_init(&BFS.queue, G.num_vertices);
     bfs_data_clear();
 }
 
 void
 bfs_deinit()
 {
-    mw_free(bfs_parent);
-    mw_free(bfs_new_parent);
-    sliding_queue_replicated_deinit(&bfs_queue);
+    mw_free(BFS.parent);
+    mw_free(BFS.new_parent);
+    sliding_queue_replicated_deinit(&BFS.queue);
 }
 
 // Core of the remote-writes BFS variant
@@ -157,7 +150,7 @@ mark_neighbors(long src, long * edges_begin, long * edges_end)
 {
     for (long * e = edges_begin; e < edges_end; ++e) {
         long dst = *e;
-        bfs_new_parent[dst] = src; // Remote write
+        BFS.new_parent[dst] = src; // Remote write
     }
 }
 
@@ -222,13 +215,13 @@ static inline void
 frontier_visitor(long src, long dst)
 {
     // Look up the parent of the vertex we are visiting
-    long * parent = &bfs_parent[dst];
+    long * parent = &BFS.parent[dst];
     // If we are the first to visit this vertex
     if (*parent == -1L) {
         // Set self as parent of this vertex
         if (ATOMIC_CAS(parent, -1L, src)) {
             // Add it to the queue
-            sliding_queue_push_back(&bfs_queue, dst);
+            sliding_queue_push_back(&BFS.queue, dst);
         }
     }
 }
@@ -266,7 +259,7 @@ dump_queue_stats()
 {
     fprintf(stdout, "Frontier size per nodelet: ");
     for (long n = 0; n < NODELETS(); ++n) {
-        sliding_queue * local_queue = mw_get_nth(&bfs_queue, n);
+        sliding_queue * local_queue = mw_get_nth(&BFS.queue, n);
         fprintf(stdout, "%li ", local_queue->end - local_queue->start);
     }
     fprintf(stdout, "\n");
@@ -275,7 +268,7 @@ dump_queue_stats()
     fprintf(stdout, "Total out-degree per nodelet: ");
     for (long n = 0; n < NODELETS(); ++n) {
         long degree_sum = 0;
-        sliding_queue * local_queue = mw_get_nth(&bfs_queue, n);
+        sliding_queue * local_queue = mw_get_nth(&BFS.queue, n);
         for (long i = local_queue->start; i < local_queue->end; ++i) {
             long v = local_queue->buffer[i];
             degree_sum += G.vertex_out_degree[v];
@@ -292,9 +285,9 @@ static void
 populate_next_frontier(long * array, long begin, long end, va_list args)
 {
     for (long i = begin; i < end; i += NODELETS()) {
-        if (bfs_parent[i] == -1 && bfs_new_parent[i] != -1) {
-            bfs_parent[i] = bfs_new_parent[i];
-            sliding_queue_push_back(&bfs_queue, i);
+        if (BFS.parent[i] == -1 && BFS.new_parent[i] != -1) {
+            BFS.parent[i] = BFS.new_parent[i];
+            sliding_queue_push_back(&BFS.queue, i);
         }
     }
 }
@@ -303,8 +296,8 @@ void
 bfs_dump()
 {
     for (long v = 0; v < G.num_vertices; ++v) {
-        long parent = bfs_parent[v];
-        long new_parent = bfs_new_parent[v];
+        long parent = BFS.parent[v];
+        long new_parent = BFS.new_parent[v];
         if (parent != -1) {
             printf("parent[%li] = %li\n", v, parent);
         }
@@ -320,25 +313,25 @@ bfs_run (long source)
     assert(source < G.num_vertices);
 
     // Start with the source vertex in the first frontier, at level 0, and mark it as visited
-    sliding_queue_push_back(mw_get_nth(&bfs_queue, 0), source);
-    sliding_queue_slide_all_windows(&bfs_queue);
-    bfs_parent[source] = source;
+    sliding_queue_push_back(mw_get_nth(&BFS.queue, 0), source);
+    sliding_queue_slide_all_windows(&BFS.queue);
+    BFS.parent[source] = source;
 
     // While there are vertices in the queue...
-    while (!sliding_queue_all_empty(&bfs_queue)) {
+    while (!sliding_queue_all_empty(&BFS.queue)) {
         // If the queue is large, use the remote write implementation to explore the frontier
-        if (bfs_use_remote_writes) {
+        if (BFS.use_remote_writes) {
 
             // Spawn a thread on each nodelet to process the local queue
             // For each neighbor, write your vertex ID to new_parent
             for (long n = 0; n < NODELETS(); ++n) {
-                sliding_queue * local_queue = mw_get_nth(&bfs_queue, n);
+                sliding_queue * local_queue = mw_get_nth(&BFS.queue, n);
                 cilk_spawn mark_queue_neighbors(local_queue);
             }
             cilk_sync;
 
             // Add to the queue all vertices that didn't have a parent before
-            emu_1d_array_apply(bfs_parent, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 256),
+            emu_1d_array_apply(BFS.parent, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 256),
                 populate_next_frontier
             );
 
@@ -347,7 +340,7 @@ bfs_run (long source)
             // Spawn a thread on each nodelet to process the local queue
             // For each neighbor without a parent, add self as parent and append to queue
             for (long n = 0; n < NODELETS(); ++n) {
-                sliding_queue * local_queue = mw_get_nth(&bfs_queue, n);
+                sliding_queue * local_queue = mw_get_nth(&BFS.queue, n);
                 cilk_spawn explore_local_frontier(local_queue);
             }
             cilk_sync;
@@ -356,7 +349,7 @@ bfs_run (long source)
         // dump_queue_stats();
 
         // Slide all queues to explore the next frontier
-        sliding_queue_slide_all_windows(&bfs_queue);
+        sliding_queue_slide_all_windows(&BFS.queue);
     }
 }
 
@@ -364,8 +357,8 @@ void
 bfs_print_tree()
 {
     for (long v = 0; v < G.num_vertices; ++v) {
-        long parent = bfs_parent[v];
-        long new_parent = bfs_new_parent[v];
+        long parent = BFS.parent[v];
+        long new_parent = BFS.new_parent[v];
         if (parent != -1) {
             printf("parent[%li] = %li\n", v, parent);
         }
@@ -381,7 +374,7 @@ compute_num_traversed_edges_worker(long * array, long begin, long end, long * pa
     long local_sum = 0;
     const long nodelets = NODELETS();
     for (long v = begin; v < end; v += nodelets) {
-        if (bfs_parent[v] >= 0) {
+        if (BFS.parent[v] >= 0) {
             local_sum += G.vertex_out_degree[v];
         }
     }
@@ -391,7 +384,7 @@ compute_num_traversed_edges_worker(long * array, long begin, long end, long * pa
 long
 bfs_count_num_traversed_edges()
 {
-    return emu_1d_array_reduce_sum(bfs_parent, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 256),
+    return emu_1d_array_reduce_sum(BFS.parent, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 256),
         compute_num_traversed_edges_worker
     );
 }
