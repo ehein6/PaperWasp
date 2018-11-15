@@ -124,7 +124,7 @@ bfs_data_clear()
 {
 //    emu_1d_array_set_long(&self->level, -1);
 //    emu_1d_array_set_long(&self->marks, 0);
-    emu_1d_array_apply(bfs_parent, num_vertices, GLOBAL_GRAIN_MIN(num_vertices, 256),
+    emu_1d_array_apply(bfs_parent, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 256),
         clear_worker
     );
     sliding_queue_replicated_reset(&bfs_queue);
@@ -134,9 +134,9 @@ bfs_data_clear()
 void bfs_init(long use_remote_writes)
 {
     mw_replicated_init(&bfs_use_remote_writes, use_remote_writes);
-    init_striped_array(&bfs_parent, num_vertices);
-    init_striped_array(&bfs_new_parent, num_vertices);
-    sliding_queue_replicated_init(&bfs_queue, num_vertices);
+    init_striped_array(&bfs_parent, G.num_vertices);
+    init_striped_array(&bfs_new_parent, G.num_vertices);
+    sliding_queue_replicated_init(&bfs_queue, G.num_vertices);
     bfs_data_clear();
 }
 
@@ -189,7 +189,7 @@ mark_queue_neighbors_worker(long begin, long end, va_list args)
     for (long v = begin; v < end; ++v) {
         long src = vertex_queue[v];
         // Get pointer to local edge block
-        edge_block * eb = vertex_neighbors[src];
+        edge_block * eb = G.vertex_neighbors[src];
 
         // How big is this vertex?
         if (is_heavy(src)) {
@@ -198,7 +198,7 @@ mark_queue_neighbors_worker(long begin, long end, va_list args)
                 edge_block * remote_eb = mw_get_nth(eb, i);
                 /* cilk_spawn_at(remote_eb) */ mark_neighbors_in_eb(src, remote_eb);
             }
-        } else if (vertex_out_degree[src] > 16384) { // TODO magic number
+        } else if (G.vertex_out_degree[src] > 16384) { // TODO magic number
             // Spawn threads for the local edge block
             /* cilk_spawn */ mark_neighbors_in_eb(src, eb);
         } else {
@@ -241,7 +241,7 @@ explore_frontier_spawner(long begin, long end, va_list args)
     for (long i = begin; i < end; ++i) {
         // Get the local edge block
         long src = buffer[i];
-        edge_block * eb = vertex_neighbors[src];
+        edge_block * eb = G.vertex_neighbors[src];
         // Visit each edge in the block
         // TODO can parallelize this loop
         for (long j = 0; j < eb->num_edges; ++j) {
@@ -278,7 +278,7 @@ dump_queue_stats()
         sliding_queue * local_queue = mw_get_nth(&bfs_queue, n);
         for (long i = local_queue->start; i < local_queue->end; ++i) {
             long v = local_queue->buffer[i];
-            degree_sum += vertex_out_degree[v];
+            degree_sum += G.vertex_out_degree[v];
         }
         fprintf(stdout, "%li ", degree_sum);
     }
@@ -302,7 +302,7 @@ populate_next_frontier(long * array, long begin, long end, va_list args)
 void
 bfs_dump()
 {
-    for (long v = 0; v < num_vertices; ++v) {
+    for (long v = 0; v < G.num_vertices; ++v) {
         long parent = bfs_parent[v];
         long new_parent = bfs_new_parent[v];
         if (parent != -1) {
@@ -317,7 +317,7 @@ bfs_dump()
 void
 bfs_run (long source)
 {
-    assert(source < num_vertices);
+    assert(source < G.num_vertices);
 
     // Start with the source vertex in the first frontier, at level 0, and mark it as visited
     sliding_queue_push_back(mw_get_nth(&bfs_queue, 0), source);
@@ -338,7 +338,7 @@ bfs_run (long source)
             cilk_sync;
 
             // Add to the queue all vertices that didn't have a parent before
-            emu_1d_array_apply(bfs_parent, num_vertices, GLOBAL_GRAIN_MIN(num_vertices, 256),
+            emu_1d_array_apply(bfs_parent, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 256),
                 populate_next_frontier
             );
 
@@ -363,7 +363,7 @@ bfs_run (long source)
 void
 bfs_print_tree()
 {
-    for (long v = 0; v < num_vertices; ++v) {
+    for (long v = 0; v < G.num_vertices; ++v) {
         long parent = bfs_parent[v];
         long new_parent = bfs_new_parent[v];
         if (parent != -1) {
@@ -382,7 +382,7 @@ compute_num_traversed_edges_worker(long * array, long begin, long end, long * pa
     const long nodelets = NODELETS();
     for (long v = begin; v < end; v += nodelets) {
         if (bfs_parent[v] >= 0) {
-            local_sum += vertex_out_degree[v];
+            local_sum += G.vertex_out_degree[v];
         }
     }
     REMOTE_ADD(partial_sum, local_sum);
@@ -391,7 +391,7 @@ compute_num_traversed_edges_worker(long * array, long begin, long end, long * pa
 long
 bfs_count_num_traversed_edges()
 {
-    return emu_1d_array_reduce_sum(bfs_parent, num_vertices, GLOBAL_GRAIN_MIN(num_vertices, 256),
+    return emu_1d_array_reduce_sum(bfs_parent, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 256),
         compute_num_traversed_edges_worker
     );
 }

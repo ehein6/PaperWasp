@@ -24,36 +24,42 @@ typedef struct edge_block {
     long * edges;
 } edge_block;
 
-extern replicated long num_edges;
-extern replicated long num_vertices;
-
 // Global data structures
+typedef struct graph {
+    // Distributed edge list that the graph will be created from.
+    // First array stores source vertex ID, second array stores dest vertex ID
+    long * dist_edge_list_src;
+    long * dist_edge_list_dst;
 
-// Distributed edge list that the graph will be created from.
-// First array stores source vertex ID, second array stores dest vertex ID
-extern replicated long * dist_edge_list_src;
-extern replicated long * dist_edge_list_dst;
+    // Total number of edges in the graph
+    long num_edges;
+    // Total number of vertices in the graph (max vertex ID + 1)
+    long num_vertices;
 
-// Distributed vertex array
-// number of vertex_neighbors for this vertex (in the en
-extern replicated long * vertex_out_degree;
-// Pointer to edge block for this vertex
-// Light vertices: points to a local edge block
-// Heavy vertices: points to a stripe
-extern replicated edge_block ** vertex_neighbors;
+    // Distributed vertex array
+    // number of neighbors for this vertex (on all nodelets)
+    long * vertex_out_degree;
+    // Pointer to edge block for this vertex
+    // Light vertices: points to a local edge block
+    // Heavy vertices: points to a stripe
+    edge_block ** vertex_neighbors;
 
-// Total number of edges stored on each nodelet
-extern replicated long num_local_edges;
-// Pointer to stripe of memory where edges are stored
-extern replicated long * edge_storage;
-// Pointer to un-reserved edge storage in local stripe
-extern replicated long * next_edge_storage;
+    // Total number of edges stored on each nodelet
+    long num_local_edges;
+    // Pointer to stripe of memory where edges are stored
+    long * edge_storage;
+    // Pointer to un-reserved edge storage in local stripe
+    long * next_edge_storage;
 
-extern replicated long heavy_threshold;
+    long heavy_threshold;
+} graph;
+
+// Single global instance of the graph
+extern replicated graph G;
 
 static inline bool
 is_heavy(long vertex_id)
 {
     // TODO it would be great if this were a local query, maybe a replicated bitmap?
-    return vertex_out_degree[vertex_id] >= heavy_threshold;
+    return G.vertex_out_degree[vertex_id] >= G.heavy_threshold;
 }

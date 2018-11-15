@@ -13,7 +13,7 @@ int main(int argc, char ** argv)
         hooks_set_active_region(active_region);
     }
 
-    mw_replicated_init(&heavy_threshold, atoi(argv[2]));
+    mw_replicated_init(&G.heavy_threshold, atoi(argv[2]));
 
     load_graph_from_edge_list(argv[1]);
 
@@ -27,7 +27,7 @@ int main(int argc, char ** argv)
     bfs_run(0);
     double time_ms = hooks_region_end();
     LOG("Completed in %3.2f ms, %3.2f MTEPS \n",
-        time_ms, (1e-6 * num_edges) / (time_ms / 1000)
+        time_ms, (1e-6 * G.num_edges) / (time_ms / 1000)
     );
 
     return 0;
