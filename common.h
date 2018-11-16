@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <emu_c_utils/emu_c_utils.h>
+#include <cilk/cilk.h>
 
 // HACK so we can compile with old toolchain
 #ifndef cilk_spawn_at

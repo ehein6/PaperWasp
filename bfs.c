@@ -183,7 +183,7 @@ mark_queue_neighbors_worker(long begin, long end, va_list args)
         long src = vertex_queue[v];
         // How big is this vertex?
         if (is_heavy(src)) {
-            edge_block * eb = G.vertex_edge_block[src];
+            edge_block * eb = G.vertex_neighbors[src].repl_edge_block;
             // Spawn a thread for each remote edge block
             for (long i = 0; i < NODELETS(); ++i) {
                 edge_block * remote_eb = mw_get_nth(eb, i);
@@ -192,7 +192,7 @@ mark_queue_neighbors_worker(long begin, long end, va_list args)
         } else {
             // Handle the local edge block in this thread
             // TODO may want to spawn some threads here
-            long * edges_begin = G.vertex_local_edges[src];
+            long * edges_begin = G.vertex_neighbors[src].local_edges;
             long * edges_end = edges_begin + G.vertex_out_degree[src];
             mark_neighbors(src, edges_begin, edges_end);
         }
@@ -236,7 +236,7 @@ explore_frontier_spawner(long begin, long end, va_list args)
         long src = vertex_queue[v];
         // How big is this vertex?
         if (is_heavy(src)) {
-            edge_block * eb = G.vertex_edge_block[src];
+            edge_block * eb = G.vertex_neighbors[src].repl_edge_block;
             // Spawn a thread for each remote edge block
             for (long i = 0; i < NODELETS(); ++i) {
                 edge_block * remote_eb = mw_get_nth(eb, i);
@@ -247,7 +247,7 @@ explore_frontier_spawner(long begin, long end, va_list args)
         } else {
             // Handle the local edge block in this thread
             // TODO may want to spawn some threads here
-            long * edges_begin = G.vertex_local_edges[src];
+            long * edges_begin = G.vertex_neighbors[src].local_edges;
             long * edges_end = edges_begin + G.vertex_out_degree[src];
             frontier_visitor(src, edges_begin, edges_end);
         }

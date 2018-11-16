@@ -24,6 +24,15 @@ typedef struct edge_block {
     long * edges;
 } edge_block;
 
+typedef union neighbors
+{
+    // Pointer to a local array of edges
+    // Array size stored in vertex_out_degree[v]
+    long * local_edges;
+    // View-0 pointer to an edge block on each nodelet
+    edge_block * repl_edge_block;
+} neighbors;
+
 // Global data structures
 typedef struct graph {
     // Distributed edge list that the graph will be created from.
@@ -40,11 +49,9 @@ typedef struct graph {
     // number of neighbors for this vertex (on all nodelets)
     long * vertex_out_degree;
 
-    // TODO combine into union to save on storage
-    // Pointer to edge array (light vertices only)
-    long ** vertex_local_edges;
-    // Pointer to replicated edge block for this vertex (heavy vertices only)
-    edge_block ** vertex_edge_block;
+    // Pointer to local edge array (light vertices only)
+    // OR replicated edge block pointer (heavy vertices only)
+    neighbors * vertex_neighbors;
 
     // Total number of edges stored on each nodelet
     long num_local_edges;
