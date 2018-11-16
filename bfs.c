@@ -204,7 +204,7 @@ mark_queue_neighbors_worker(long begin, long end, va_list args)
 void
 mark_queue_neighbors(sliding_queue * queue)
 {
-    emu_local_for(queue->start, queue->end, LOCAL_GRAIN_MIN(queue->end - queue->start, 64),
+    emu_local_for(queue->start, queue->end, LOCAL_GRAIN_MIN(queue->end - queue->start, 8),
         mark_queue_neighbors_worker, queue->buffer
     );
 }
