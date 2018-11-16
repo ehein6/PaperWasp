@@ -85,7 +85,7 @@ compute_edge_blocks_sizes_worker(long * array, long begin, long end, va_list arg
         if (is_heavy(src)) {
             // Find the edge block near the destination vertex
             long dst = G.dist_edge_list_dst[i];
-            edge_block * local_eb = mw_get_localto(G.vertex_neighbors[src], &G.vertex_neighbors[dst]);
+            edge_block * local_eb = mw_get_localto(G.vertex_edge_block[src], &G.vertex_edge_block[dst]);
             // Increment the edge count
             ATOMIC_ADDMS(&local_eb->num_edges, 1);
         }
@@ -97,50 +97,21 @@ count_local_edges_worker(long * array, long begin, long end, va_list args)
 {
     (void)array;
     // Sum up size of all local edge blocks
-    for (long vertex_id = begin; vertex_id < end; vertex_id += NODELETS()) {
-        if (is_heavy(vertex_id)) {
+    for (long v = begin; v < end; v += NODELETS()) {
+        if (is_heavy(v)) {
             // Heavy vertices have an edge block on each nodelet
             // TODO could avoid some migrations here by giving each local edge block to a local iteration
-            for (long nodelet_id = 0; nodelet_id < NODELETS(); ++nodelet_id) {
+            for (long nlet = 0; nlet < NODELETS(); ++nlet) {
                 // Get the size of the edge block on this nodelet
-                edge_block * local_eb = mw_get_nth(G.vertex_neighbors[vertex_id], nodelet_id);
-                long my_local_edges = local_eb->num_edges;
+                edge_block * local_eb = mw_get_nth(G.vertex_edge_block[v], nlet);
                 // Add to the counter on this nodelet
-                ATOMIC_ADDMS(&G.num_local_edges, my_local_edges);
+                ATOMIC_ADDMS(&G.num_local_edges, local_eb->num_edges);
             }
         } else {
-            // Local vertices have one edge block on the local nodelet
-            long my_local_edges = G.vertex_neighbors[vertex_id]->num_edges;
-            ATOMIC_ADDMS(&G.num_local_edges, my_local_edges);
+            // For light vertices, we can assume all edges are local
+            ATOMIC_ADDMS(&G.num_local_edges, G.vertex_out_degree[v]);
         }
     }
-}
-
-void
-allocate_edge_blocks_for_light_vertex(long vertex_id)
-{
-    // Make local edge block for light vertex
-    MIGRATE(&G.vertex_neighbors[vertex_id]);
-    edge_block * eb = malloc(sizeof(edge_block));
-    assert(eb); // TODO make sure eb is on the right nodelet
-    // As long as we're here, set the edge block size
-    eb->num_edges = G.vertex_out_degree[vertex_id];
-    eb->edges = NULL;
-    G.vertex_neighbors[vertex_id] = eb;
-}
-
-void
-allocate_edge_blocks_for_heavy_vertex(long vertex_id)
-{
-    // Allocate an edge block on each nodelet for the heavy vertex
-    // Use replication so we can do locality lookups later
-    edge_block * repl_eb = mw_mallocrepl(sizeof(edge_block));
-    assert(repl_eb);
-    // Zero out all copies
-    for (long i = 0; i < NODELETS(); ++i) {
-        memset(mw_get_nth(repl_eb, i), 0, sizeof(edge_block));
-    }
-    G.vertex_neighbors[vertex_id] = repl_eb;
 }
 
 void
@@ -148,11 +119,18 @@ allocate_edge_blocks_worker(long * array, long begin, long end, va_list args)
 {
     (void)array;
     // For each vertex...
-    for (long vertex_id = begin; vertex_id < end; vertex_id += NODELETS()) {
-        if (is_heavy(vertex_id)) {
-            allocate_edge_blocks_for_heavy_vertex(vertex_id);
-        } else {
-            allocate_edge_blocks_for_light_vertex(vertex_id);
+    for (long v = begin; v < end; v += NODELETS()) {
+        if (is_heavy(v)) {
+            // Allocate an edge block on each nodelet for the heavy vertex
+            // Use replication so we can do locality lookups later
+            edge_block * repl_eb = mw_mallocrepl(sizeof(edge_block));
+            assert(repl_eb);
+            // Zero out all copies
+            for (long i = 0; i < NODELETS(); ++i) {
+                memset(mw_get_nth(repl_eb, i), 0, sizeof(edge_block));
+            }
+            G.vertex_local_edges[v] = NULL;
+            G.vertex_edge_block[v] = repl_eb;
         }
     }
 }
@@ -162,8 +140,8 @@ long compute_max_edges_per_nodelet()
     // Run around and compute the largest number of edges on any nodelet
     long max_edges_per_nodelet = 0;
     long check_total_edges = 0;
-    for (long nodelet_id = 0; nodelet_id < NODELETS(); ++nodelet_id) {
-        long num_edges_on_nodelet = *(long*)mw_get_nth(&G.num_local_edges, nodelet_id);
+    for (long nlet = 0; nlet < NODELETS(); ++nlet) {
+        long num_edges_on_nodelet = *(long*)mw_get_nth(&G.num_local_edges, nlet);
         REMOTE_MAX(&max_edges_per_nodelet, num_edges_on_nodelet);
         REMOTE_ADD(&check_total_edges, num_edges_on_nodelet);
     }
@@ -184,12 +162,12 @@ void
 carve_edge_storage_worker(long * array, long begin, long end, va_list args)
 {
     (void)array;
-    for (long vertex_id = begin; vertex_id < end; vertex_id += NODELETS()) {
-        if (is_heavy(vertex_id)) {
+    for (long v = begin; v < end; v += NODELETS()) {
+        if (is_heavy(v)) {
             // Heavy vertices have an edge block on each nodelet
             // TODO could avoid some migrations here by giving each local edge block to a local iteration
-            for (long nodelet_id = 0; nodelet_id < NODELETS(); ++nodelet_id) {
-                edge_block * local_eb = mw_get_nth(G.vertex_neighbors[vertex_id], nodelet_id);
+            for (long nlet = 0; nlet < NODELETS(); ++nlet) {
+                edge_block * local_eb = mw_get_nth(G.vertex_edge_block[v], nlet);
                 // Carve out a chunk for myself
                 local_eb->edges = grab_edges(&G.next_edge_storage, local_eb->num_edges);
                 // HACK Prepare to fill
@@ -197,10 +175,9 @@ carve_edge_storage_worker(long * array, long begin, long end, va_list args)
             }
         } else {
             // Local vertices have one edge block on the local nodelet
-            edge_block * local_eb = G.vertex_neighbors[vertex_id];
-            local_eb->edges = grab_edges(&G.next_edge_storage, local_eb->num_edges);
+            G.vertex_local_edges[v] = grab_edges(&G.next_edge_storage, G.vertex_out_degree[v]);
             // HACK Prepare to fill
-            local_eb->num_edges = 0;
+            G.vertex_out_degree[v] = 0;
         }
     }
 }
@@ -212,20 +189,25 @@ fill_edge_blocks_worker(long * array, long begin, long end, va_list args)
     for (long i = begin; i < end; i += NODELETS()) {
         long src = G.dist_edge_list_src[i];
         long dst = G.dist_edge_list_dst[i];
-        edge_block * eb;
+        // Pointer to local edge array for this vertex
+        long * edges;
+        // Pointer to current size of local edge array for this vertex
+        long * num_edges_ptr;
         if (is_heavy(src)) {
             // Get the edge block that is colocated with the destination vertex
-            eb = mw_get_localto(G.vertex_neighbors[src], &G.vertex_neighbors[dst]);
+            edge_block * eb = mw_get_localto(G.vertex_edge_block[src], &G.vertex_edge_block[dst]);
+            edges = eb->edges;
+            num_edges_ptr = &eb->num_edges;
         } else {
-            // Get the local edge block
-            eb = G.vertex_neighbors[src];
+            // Get the local edge array
+            edges = G.vertex_local_edges[src];
+            num_edges_ptr = &G.vertex_out_degree[src];
         }
         // Atomically claim a position in the edge list
-        // NOTE: Relies on eb->nedgesblk being set to zero in the previous step
-        long pos = ATOMIC_ADDMS(&eb->num_edges, 1);
-
+        // NOTE: Relies on all edge counters being set to zero in the previous step
+        long pos = ATOMIC_ADDMS(num_edges_ptr, 1);
         // Insert the edge
-        eb->edges[pos] = dst;
+        edges[pos] = dst;
     }
 }
 
@@ -263,7 +245,8 @@ load_graph_from_edge_list(const char* filename)
     LOG("Initializing distributed vertex list...\n");
     // Create and initialize distributed vertex list
     init_striped_array(&G.vertex_out_degree, G.num_vertices);
-    init_striped_array((long**)&G.vertex_neighbors, G.num_vertices);
+    init_striped_array((long**)&G.vertex_local_edges, G.num_vertices);
+    init_striped_array((long**)&G.vertex_edge_block, G.num_vertices);
 
     // TODO set grain more intelligently
     // Grain size to use when scanning the edge list
@@ -285,12 +268,11 @@ load_graph_from_edge_list(const char* filename)
     hooks_region_end();
 
     // Allocate edge blocks at each vertex
-    // Light edges get a single local edge block
     // Heavy edges get an edge block on each nodelet
     // Edge storage is not allocated yet
     LOG("Allocating edge blocks...\n");
     hooks_region_begin("allocate_edge_blocks");
-    emu_1d_array_apply((long*)G.vertex_neighbors, G.num_vertices, vertex_list_grain,
+    emu_1d_array_apply((long*)G.vertex_edge_block, G.num_vertices, vertex_list_grain,
         allocate_edge_blocks_worker
     );
     hooks_region_end();
@@ -333,7 +315,7 @@ load_graph_from_edge_list(const char* filename)
     LOG("Carving edge storage...\n");
     replicated_init_ptr(&G.next_edge_storage, G.edge_storage);
     hooks_region_begin("carve_edge_storage");
-    emu_1d_array_apply((long*)G.vertex_neighbors, G.num_vertices, vertex_list_grain,
+    emu_1d_array_apply((long*)G.vertex_edge_block, G.num_vertices, vertex_list_grain,
         carve_edge_storage_worker
     );
     hooks_region_end();

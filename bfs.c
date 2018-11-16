@@ -181,22 +181,20 @@ mark_queue_neighbors_worker(long begin, long end, va_list args)
     long * vertex_queue = va_arg(args, long*);
     for (long v = begin; v < end; ++v) {
         long src = vertex_queue[v];
-        // Get pointer to local edge block
-        edge_block * eb = G.vertex_neighbors[src];
-
         // How big is this vertex?
         if (is_heavy(src)) {
+            edge_block * eb = G.vertex_edge_block[src];
             // Spawn a thread for each remote edge block
             for (long i = 0; i < NODELETS(); ++i) {
                 edge_block * remote_eb = mw_get_nth(eb, i);
                 /* cilk_spawn_at(remote_eb) */ mark_neighbors_in_eb(src, remote_eb);
             }
-        } else if (G.vertex_out_degree[src] > 16384) { // TODO magic number
-            // Spawn threads for the local edge block
-            /* cilk_spawn */ mark_neighbors_in_eb(src, eb);
         } else {
-            // Handle the edge block in this thread
-            mark_neighbors(src, eb->edges, eb->edges + eb->num_edges);
+            // Handle the local edge block in this thread
+            // TODO may want to spawn some threads here
+            long * edges_begin = G.vertex_local_edges[src];
+            long * edges_end = edges_begin + G.vertex_out_degree[src];
+            mark_neighbors(src, edges_begin, edges_end);
         }
     }
 }
@@ -211,17 +209,20 @@ mark_queue_neighbors(sliding_queue * queue)
     );
 }
 
-static inline void
-frontier_visitor(long src, long dst)
+static noinline void
+frontier_visitor(long src, long * edges_begin, long * edges_end)
 {
-    // Look up the parent of the vertex we are visiting
-    long * parent = &BFS.parent[dst];
-    // If we are the first to visit this vertex
-    if (*parent == -1L) {
-        // Set self as parent of this vertex
-        if (ATOMIC_CAS(parent, -1L, src)) {
-            // Add it to the queue
-            sliding_queue_push_back(&BFS.queue, dst);
+    for (long * e = edges_begin; e < edges_end; ++e) {
+        long dst = *e;
+        // Look up the parent of the vertex we are visiting
+        long * parent = &BFS.parent[dst];
+        // If we are the first to visit this vertex
+        if (*parent == -1L) {
+            // Set self as parent of this vertex
+            if (ATOMIC_CAS(parent, -1L, src)) {
+                // Add it to the queue
+                sliding_queue_push_back(&BFS.queue, dst);
+            }
         }
     }
 }
@@ -229,17 +230,26 @@ frontier_visitor(long src, long dst)
 void
 explore_frontier_spawner(long begin, long end, va_list args)
 {
-    long * buffer = va_arg(args, long *);
-    // For each vertex in this thread's slice of the queue...
-    for (long i = begin; i < end; ++i) {
-        // Get the local edge block
-        long src = buffer[i];
-        edge_block * eb = G.vertex_neighbors[src];
-        // Visit each edge in the block
-        // TODO can parallelize this loop
-        for (long j = 0; j < eb->num_edges; ++j) {
-            long dst = eb->edges[j];
-            frontier_visitor(src, dst);
+    // For each vertex in our slice of the queue...
+    long * vertex_queue = va_arg(args, long*);
+    for (long v = begin; v < end; ++v) {
+        long src = vertex_queue[v];
+        // How big is this vertex?
+        if (is_heavy(src)) {
+            edge_block * eb = G.vertex_edge_block[src];
+            // Spawn a thread for each remote edge block
+            for (long i = 0; i < NODELETS(); ++i) {
+                edge_block * remote_eb = mw_get_nth(eb, i);
+                long * edges_begin = remote_eb->edges;
+                long * edges_end = edges_begin + remote_eb->num_edges;
+                /* cilk_spawn_at(remote_eb) */ frontier_visitor(src, edges_begin, edges_end);
+            }
+        } else {
+            // Handle the local edge block in this thread
+            // TODO may want to spawn some threads here
+            long * edges_begin = G.vertex_local_edges[src];
+            long * edges_end = edges_begin + G.vertex_out_degree[src];
+            frontier_visitor(src, edges_begin, edges_end);
         }
     }
 }

@@ -39,10 +39,12 @@ typedef struct graph {
     // Distributed vertex array
     // number of neighbors for this vertex (on all nodelets)
     long * vertex_out_degree;
-    // Pointer to edge block for this vertex
-    // Light vertices: points to a local edge block
-    // Heavy vertices: points to a stripe
-    edge_block ** vertex_neighbors;
+
+    // TODO combine into union to save on storage
+    // Pointer to edge array (light vertices only)
+    long ** vertex_local_edges;
+    // Pointer to replicated edge block for this vertex (heavy vertices only)
+    edge_block ** vertex_edge_block;
 
     // Total number of edges stored on each nodelet
     long num_local_edges;
