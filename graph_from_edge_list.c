@@ -332,3 +332,34 @@ load_graph_from_edge_list(const char* filename)
 
     LOG("...Done\n");
 }
+
+void
+count_num_heavy_vertices_worker(long * array, long begin, long end, long * sum, va_list args)
+{
+    long local_sum = 0;
+    for (long v = begin; v < end; v += NODELETS()) {
+        if (is_heavy(v)) {
+            local_sum += 1;
+        }
+    }
+    REMOTE_ADD(sum, local_sum);
+}
+
+long count_num_heavy_vertices() {
+    return emu_1d_array_reduce_sum(G.vertex_out_degree, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 128),
+        count_num_heavy_vertices_worker
+    );
+}
+
+void print_graph_distribution()
+{
+    long num_heavy_vertices = count_num_heavy_vertices();
+    LOG("Heavy vertices: %li / %li (%3.0f%%)\n",
+        num_heavy_vertices,
+        G.num_vertices,
+        100.0 * ((double)num_heavy_vertices / (double)G.num_vertices)
+    );
+    for (long nlet = 0; nlet < NODELETS(); ++nlet) {
+        LOG("nlet[%li]: %20li edges\n", nlet, *(long*)mw_get_nth(&G.num_local_edges, nlet));
+    }
+}

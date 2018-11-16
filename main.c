@@ -16,6 +16,7 @@ int main(int argc, char ** argv)
     mw_replicated_init(&G.heavy_threshold, atoi(argv[2]));
 
     load_graph_from_edge_list(argv[1]);
+    print_graph_distribution();
 
     LOG("Initializing BFS data structures...\n");
     bfs_init(true);
