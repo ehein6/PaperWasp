@@ -162,7 +162,10 @@ carve_edge_storage_worker(long * array, long begin, long end, va_list args)
 {
     (void)array;
     for (long v = begin; v < end; v += NODELETS()) {
-        if (is_heavy(v)) {
+        // Empty vertices don't need storage
+        if (G.vertex_out_degree[v] == 0) {
+            continue;
+        } else if (is_heavy(v)) {
             // Heavy vertices have an edge block on each nodelet
             // TODO could avoid some migrations here by giving each local edge block to a local iteration
             for (long nlet = 0; nlet < NODELETS(); ++nlet) {
@@ -350,13 +353,16 @@ load_graph_from_edge_list(const char* filename)
     // Allocate a big stripe, such that there is enough room for the nodelet
     // with the most local edges
     // There will be wasted space on the other nodelets
-    G.edge_storage = mw_mallocstripe(sizeof(long) * max_edges_per_nodelet);
-    replicated_init_ptr(&G.edge_storage, G.edge_storage);
-    assert(G.edge_storage);
+    long ** edge_storage = mw_malloc2d(NODELETS(), sizeof(long) * max_edges_per_nodelet);
+    assert(edge_storage);
+    // Initialize each copy of G.edge_storage to point to the local chunk
+    for (long nlet = 0; nlet < NODELETS(); ++nlet) {
+        *(long**)mw_get_nth(&G.edge_storage, nlet) = edge_storage[nlet];
+        *(long**)mw_get_nth(&G.next_edge_storage, nlet) = edge_storage[nlet];
+    }
 
     // Assign each edge block a position within the big array
     LOG("Carving edge storage...\n");
-    replicated_init_ptr(&G.next_edge_storage, G.edge_storage);
     hooks_region_begin("carve_edge_storage");
     emu_1d_array_apply((long*)G.vertex_neighbors, G.num_vertices, vertex_list_grain,
         carve_edge_storage_worker
