@@ -219,6 +219,51 @@ void scatter_edge_list_worker(long begin, long end, va_list args)
     }
 }
 
+bool
+edge_exists(long src, long dst)
+{
+    // Find the edge block that would contain this neighbor
+    long * edges_begin;
+    long * edges_end;
+    if (is_heavy(src)) {
+        edge_block * eb = mw_get_localto(G.vertex_neighbors[src].repl_edge_block, &G.vertex_neighbors[dst]);
+        edges_begin = eb->edges;
+        edges_end = edges_begin + eb->num_edges;
+    } else {
+        edges_begin = G.vertex_neighbors[src].local_edges;
+        edges_end = edges_begin + G.vertex_out_degree[src];
+    }
+
+    // Search for the neighbor
+    for (long * e = edges_begin; e < edges_end; ++e) {
+        assert(*e >= 0);
+        assert(*e < G.num_vertices);
+        if (*e == dst) { return true; }
+    }
+
+    // Neighbor not found
+    return false;
+}
+
+void check_graph_worker(long * array, long begin, long end, va_list args)
+{
+    for (long i = begin; i < end; i += NODELETS()) {
+        long src = G.dist_edge_list_src[i];
+        long dst = G.dist_edge_list_dst[i];
+        if (!edge_exists(src, dst)) {
+            LOG("Missing edge %li->%li\n", src, dst);
+        }
+    }
+}
+
+// Compare the edge list with the constructed graph
+// VERY SLOW, use only for testing
+void check_graph() {
+    emu_1d_array_apply(G.dist_edge_list_src, G.num_edges, GLOBAL_GRAIN(G.num_edges),
+        check_graph_worker
+    );
+}
+
 void
 load_graph_from_edge_list(const char* filename)
 {
@@ -329,6 +374,9 @@ load_graph_from_edge_list(const char* filename)
     hooks_region_end();
 
     LOG("...Done\n");
+
+    LOG("Checking graph...\n");
+    check_graph();
 }
 
 void
