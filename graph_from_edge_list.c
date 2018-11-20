@@ -415,9 +415,6 @@ load_graph_from_edge_list(const char* filename)
     hooks_region_end();
 
     LOG("...Done\n");
-
-    LOG("Checking graph...\n");
-    check_graph();
 }
 
 void
