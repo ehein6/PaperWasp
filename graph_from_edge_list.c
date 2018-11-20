@@ -267,6 +267,41 @@ void check_graph() {
     );
 }
 
+void dump_edge_list()
+{
+    for (long i = 0; i < G.num_edges; ++i) {
+        long src = G.dist_edge_list_src[i];
+        long dst = G.dist_edge_list_dst[i];
+        LOG ("%li -> %li\n", src, dst);
+    }
+}
+
+void dump_graph()
+{
+    for (long src = 0; src < G.num_vertices; ++src) {
+        long * edges_begin;
+        long * edges_end;
+        if (G.vertex_out_degree[src] == 0) {
+            continue;
+        } else if (is_heavy(src)) {
+            LOG("%li ", src);
+            for (long nlet = 0; nlet < NODELETS(); ++nlet) {
+                LOG("\n    nlet[%li] ->", nlet);
+                edge_block * eb = mw_get_nth(G.vertex_neighbors[src].repl_edge_block, nlet);
+                edges_begin = eb->edges;
+                edges_end = edges_begin + eb->num_edges;
+                for (long * e = edges_begin; e < edges_end; ++e) { LOG(" %li", *e); }
+            }
+        } else {
+            LOG("%li ->", src);
+            edges_begin = G.vertex_neighbors[src].local_edges;
+            edges_end = edges_begin + G.vertex_out_degree[src];
+            for (long * e = edges_begin; e < edges_end; ++e) { LOG(" %li", *e); }
+        }
+        LOG("\n");
+    }
+}
+
 void
 load_graph_from_edge_list(const char* filename)
 {
