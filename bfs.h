@@ -31,5 +31,6 @@ extern replicated bfs_data BFS;
 
 void bfs_init(long use_remote_writes);
 void bfs_run (long source);
+void bfs_data_clear();
 void bfs_deinit();
 
