@@ -286,7 +286,7 @@ void dump_graph()
         } else if (is_heavy(src)) {
             LOG("%li ", src);
             for (long nlet = 0; nlet < NODELETS(); ++nlet) {
-                LOG("\n    nlet[%li] ->", nlet);
+                LOG("\n    nlet[%02li] ->", nlet);
                 edge_block * eb = mw_get_nth(G.vertex_neighbors[src].repl_edge_block, nlet);
                 edges_begin = eb->edges;
                 edges_end = edges_begin + eb->num_edges;

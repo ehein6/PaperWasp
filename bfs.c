@@ -154,6 +154,44 @@ mark_neighbors(long src, long * edges_begin, long * edges_end)
     }
 }
 
+static inline long
+MY_LOCAL_GRAIN(long n)
+{
+    long local_num_threads = 64 * 1;
+    return n > local_num_threads ? (n/local_num_threads) : 1;
+}
+
+/**
+ * Similar to LOCAL_GRAIN, except the final grain size can never be smaller than @c min_grain
+ * @param n number of loop iterations
+ * @param min_grain minimum grain size to return
+ * @return grain size
+ */
+static inline long
+MY_LOCAL_GRAIN_MIN(long n, long min_grain)
+{
+    long grain = MY_LOCAL_GRAIN(n);
+    return grain > min_grain ? grain : min_grain;
+}
+
+static inline void
+mark_neighbors_parallel(long src, long * edges_begin, long * edges_end)
+{
+    long degree = edges_end - edges_begin;
+    long grain = MY_LOCAL_GRAIN_MIN(degree, 128);
+    if (degree <= grain) {
+        // Low-degree local vertex, handle in this thread
+        mark_neighbors(src, edges_begin, edges_end);
+    } else {
+        // High-degree local vertex, spawn local threads
+        for (long * e1 = edges_begin; e1 < edges_end; e1 += grain) {
+            long * e2 = e1 + grain;
+            if (e2 > edges_end) { e2 = edges_end; }
+            cilk_spawn mark_neighbors(src, e1, e2);
+        }
+    }
+}
+
 // Wrapper for emu_local_for to call mark_neighbors
 void
 mark_neighbors_worker(long begin, long end, va_list args)
@@ -168,9 +206,10 @@ mark_neighbors_worker(long begin, long end, va_list args)
 void
 mark_neighbors_in_eb(long src, edge_block * eb)
 {
-    emu_local_for(0, eb->num_edges, LOCAL_GRAIN_MIN(eb->num_edges, 1024),
-        mark_neighbors_worker, src, eb->edges
-    );
+    // emu_local_for(0, eb->num_edges, LOCAL_GRAIN_MIN(eb->num_edges, 1024),
+    //     mark_neighbors_worker, src, eb->edges
+    // );
+    mark_neighbors_parallel(src, eb->edges, eb->edges + eb->num_edges);
 }
 
 // Spawns threads to call mark_neighbors in parallel over a slice of the frontier
@@ -183,18 +222,16 @@ mark_queue_neighbors_worker(long begin, long end, va_list args)
         long src = vertex_queue[v];
         // How big is this vertex?
         if (is_heavy(src)) {
+            // Heavy vertex, spawn a thread for each remote edge block
             edge_block * eb = G.vertex_neighbors[src].repl_edge_block;
-            // Spawn a thread for each remote edge block
             for (long i = 0; i < NODELETS(); ++i) {
                 edge_block * remote_eb = mw_get_nth(eb, i);
-                /* cilk_spawn_at(remote_eb) */ mark_neighbors_in_eb(src, remote_eb);
+                cilk_spawn_at(remote_eb) mark_neighbors_in_eb(src, remote_eb);
             }
         } else {
-            // Handle the local edge block in this thread
-            // TODO may want to spawn some threads here
             long * edges_begin = G.vertex_neighbors[src].local_edges;
             long * edges_end = edges_begin + G.vertex_out_degree[src];
-            mark_neighbors(src, edges_begin, edges_end);
+            mark_neighbors_parallel(src, edges_begin, edges_end);
         }
     }
 }
