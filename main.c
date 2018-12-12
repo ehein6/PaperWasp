@@ -1,6 +1,9 @@
+#include <string.h>
+#include <getopt.h>
+#include <limits.h>
+
 #include "graph_from_edge_list.h"
 #include "bfs.h"
-
 
 #define LCG_MUL64 6364136223846793005ULL
 #define LCG_ADD64 1
@@ -30,39 +33,118 @@ lcg_rand(unsigned long * x) {
     return *x;
 }
 
+const struct option long_options[] = {
+    {"graph_filename"   ,  required_argument},
+    {"heavy_threshold"  , required_argument},
+    {"num_samples"      , required_argument},
+    {"algorithm"        , required_argument},
+    {"help"             , no_argument},
+    {NULL}
+};
+
+void
+print_help(const char* argv0)
+{
+    LOG( "Usage: %s [OPTIONS]\n", argv0);
+    LOG("\t--graph_filename     Path to graph file to load\n");
+    LOG("\t--heavy_threshold    Vertices with this many neighbors will be spread across nodelets\n");
+    LOG("\t--num_samples        Run BFS against this many random vertices\n");
+    LOG("\t--algorithm          Select BFS implementation to run\n");
+    LOG("\t--help               Print command line help\n");
+}
+
+typedef struct bfs_args {
+    const char* graph_filename;
+    long heavy_threshold;
+    long num_samples;
+    const char* algorithm;
+} bfs_args;
+
+struct bfs_args
+parse_args(int argc, char *argv[])
+{
+    bfs_args args;
+    args.graph_filename = NULL;
+    args.heavy_threshold = LONG_MAX;
+    args.num_samples = 1;
+    args.algorithm = "remote_writes";
+
+    int option_index;
+    while (true)
+    {
+        int c = getopt_long(argc, argv, "", long_options, &option_index);
+        // Done parsing
+        if (c == -1) { break; }
+        // Parse error
+        if (c == '?') {
+            LOG( "Invalid arguments\n");
+            print_help(argv[0]);
+            exit(1);
+        }
+        const char* option_name = long_options[option_index].name;
+
+        if (!strcmp(option_name, "graph_filename")) {
+            args.graph_filename = optarg;
+        } else if (!strcmp(option_name, "heavy_threshold")) {
+            args.heavy_threshold = atol(optarg);
+        } else if (!strcmp(option_name, "num_samples")) {
+            args.num_samples = atol(optarg);
+        } else if (!strcmp(option_name, "algorithm")) {
+            args.algorithm = optarg;
+        } else if (!strcmp(option_name, "help")) {
+            print_help(argv[0]);
+            exit(1);
+        }
+    }
+    if (args.graph_filename == NULL) { LOG( "Missing graph filename"); exit(1); }
+    if (args.heavy_threshold <= 0) { LOG( "heavy_threshold must be > 0"); exit(1); }
+    if (args.num_samples <= 0) { LOG( "num_samples must be > 0"); exit(1); }
+    return args;
+}
+
 int main(int argc, char ** argv)
 {
-    if (argc != 4) {
-        LOG("Usage: %s <graph_file> <heavy_threshold> <num_samples>\n", argv[0]);
-        exit(1);
-    }
-
+    // Set active region for hooks
     const char* active_region = getenv("HOOKS_ACTIVE_REGION");
     if (active_region != NULL) {
         hooks_set_active_region(active_region);
     }
 
-    mw_replicated_init(&G.heavy_threshold, atol(argv[2]));
-    long num_samples = atol(argv[3]);
-    assert(num_samples > 0);
+    // Parse command-line argumetns
+    bfs_args args = parse_args(argc, argv);
 
-    load_graph_from_edge_list(argv[1]);
+    // Load the graph
+    mw_replicated_init(&G.heavy_threshold, args.heavy_threshold);
+    hooks_set_attr_i64("heavy_threshold", args.heavy_threshold);
+    load_graph_from_edge_list(args.graph_filename);
     print_graph_distribution();
 
+    // Initialize the algorithm
     LOG("Initializing BFS data structures...\n");
-    bool use_remote_writes = true;
+    hooks_set_attr_str("algorithm", args.algorithm);
+    bool use_remote_writes;
+    if (!strcmp(args.algorithm, "remote_writes")) {
+        use_remote_writes = true;
+    } else if (!strcmp(args.algorithm, "migrating_threads")) {
+        use_remote_writes = false;
+    } else {
+        LOG("Algorithm '%s' not implemented!\n");
+        exit(1);
+    }
     bfs_init(use_remote_writes);
 
+    // Initialize RNG with deterministic seed
     unsigned long lcg_state = 0;
-    lcg_init(&lcg_state, 0); // deterministic seed
+    lcg_init(&lcg_state, 0);
+
     long source;
-    for (long s = 0; s < num_samples; ++s) {
+    for (long s = 0; s < args.num_samples; ++s) {
         // Randomly pick a source vertex with positive degree
         do {
             source = lcg_rand(&lcg_state) % G.num_vertices;
         } while (G.vertex_out_degree[source] == 0);
         LOG("Doing breadth-first search from vertex %li (sample %li of %li)\n",
-            source, s + 1, num_samples);
+            source, s + 1, args.num_samples);
         // Run the BFS
         hooks_set_attr_i64("source_vertex", source);
         hooks_region_begin("bfs");
