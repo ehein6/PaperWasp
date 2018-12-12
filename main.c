@@ -55,17 +55,24 @@ int main(int argc, char ** argv)
 
     unsigned long lcg_state = 0;
     lcg_init(&lcg_state, 0); // deterministic seed
+    long source;
     for (long s = 0; s < num_samples; ++s) {
-        long source = lcg_rand(&lcg_state) % G.num_vertices;
+        // Randomly pick a source vertex with positive degree
+        do {
+            source = lcg_rand(&lcg_state) % G.num_vertices;
+        } while (G.vertex_out_degree[source] == 0);
         LOG("Doing breadth-first search from vertex %li (sample %li of %li)\n",
-            source, s, num_samples);
+            source, s + 1, num_samples);
+        // Run the BFS
         hooks_set_attr_i64("source_vertex", source);
         hooks_region_begin("bfs");
         bfs_run(source);
         double time_ms = hooks_region_end();
+        // Output results
         LOG("Completed in %3.2f ms, %3.2f MTEPS \n",
             time_ms, (1e-6 * G.num_edges) / (time_ms / 1000)
         );
+        // Reset for next run
         bfs_data_clear();
     }
     return 0;
