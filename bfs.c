@@ -241,11 +241,16 @@ mark_queue_neighbors_worker(long begin, long end, va_list args)
 void
 mark_queue_neighbors(sliding_queue * queue)
 {
-    emu_local_for(queue->start, queue->end, LOCAL_GRAIN_MIN(queue->end - queue->start, 8),
+    emu_local_for(queue->start, queue->end, MY_LOCAL_GRAIN_MIN(queue->end - queue->start, 8),
         mark_queue_neighbors_worker, queue->buffer
     );
 }
 
+// Core of the migrating-threads BFS variant
+// For each edge in the frontier, migrate to the home vertex
+// If the dst vertex doesn't have a parent, set src as parent
+// Then append to local queue for next frontier
+// Using noinline to minimize the size of the migrating context
 static noinline void
 frontier_visitor(long src, long * edges_begin, long * edges_end)
 {
@@ -256,7 +261,7 @@ frontier_visitor(long src, long * edges_begin, long * edges_end)
         // If we are the first to visit this vertex
         if (*parent == -1L) {
             // Set self as parent of this vertex
-            if (ATOMIC_CAS(parent, -1L, src)) {
+            if (ATOMIC_CAS(parent, src, -1L) == -1L) {
                 // Add it to the queue
                 sliding_queue_push_back(&BFS.queue, dst);
             }
@@ -264,6 +269,34 @@ frontier_visitor(long src, long * edges_begin, long * edges_end)
     }
 }
 
+// Runs frontier_visitor over a range of edges in parallel
+void
+explore_frontier_parallel(long src, long * edges_begin, long * edges_end)
+{
+    long degree = edges_end - edges_begin;
+    long grain = MY_LOCAL_GRAIN_MIN(degree, 128);
+    if (degree <= grain) {
+        // Low-degree local vertex, handle in this thread
+        // TODO spawn here to separate from parent thread?
+        frontier_visitor(src, edges_begin, edges_end);
+    } else {
+        // High-degree local vertex, spawn local threads
+        for (long * e1 = edges_begin; e1 < edges_end; e1 += grain) {
+            long * e2 = e1 + grain;
+            if (e2 > edges_end) { e2 = edges_end; }
+            cilk_spawn frontier_visitor(src, e1, e2);
+        }
+    }
+}
+
+// Calls explore_frontier_parallel over a remote edge block
+void
+explore_frontier_in_eb(long src, edge_block * eb)
+{
+    explore_frontier_parallel(src, eb->edges, eb->edges + eb->num_edges);
+}
+
+// Spawns threads to call frontier_visitor in parallel over a slice of the frontier
 void
 explore_frontier_spawner(long begin, long end, va_list args)
 {
@@ -273,20 +306,16 @@ explore_frontier_spawner(long begin, long end, va_list args)
         long src = vertex_queue[v];
         // How big is this vertex?
         if (is_heavy(src)) {
+            // Heavy vertex, spawn a thread for each remote edge block
             edge_block * eb = G.vertex_neighbors[src].repl_edge_block;
-            // Spawn a thread for each remote edge block
             for (long i = 0; i < NODELETS(); ++i) {
                 edge_block * remote_eb = mw_get_nth(eb, i);
-                long * edges_begin = remote_eb->edges;
-                long * edges_end = edges_begin + remote_eb->num_edges;
-                /* cilk_spawn_at(remote_eb) */ frontier_visitor(src, edges_begin, edges_end);
+                cilk_spawn_at(remote_eb) explore_frontier_in_eb(src, remote_eb);
             }
         } else {
-            // Handle the local edge block in this thread
-            // TODO may want to spawn some threads here
             long * edges_begin = G.vertex_neighbors[src].local_edges;
             long * edges_end = edges_begin + G.vertex_out_degree[src];
-            frontier_visitor(src, edges_begin, edges_end);
+            explore_frontier_parallel(src, edges_begin, edges_end);
         }
     }
 }
@@ -295,7 +324,7 @@ explore_frontier_spawner(long begin, long end, va_list args)
 void
 explore_local_frontier(sliding_queue * queue)
 {
-    emu_local_for(queue->start, queue->end, LOCAL_GRAIN(queue->end - queue->start),
+    emu_local_for(queue->start, queue->end, MY_LOCAL_GRAIN_MIN(queue->end - queue->start, 8),
         explore_frontier_spawner, queue->buffer
     );
 }
@@ -392,8 +421,6 @@ bfs_run (long source)
             }
             cilk_sync;
         }
-
-        // dump_queue_stats();
 
         // Slide all queues to explore the next frontier
         sliding_queue_slide_all_windows(&BFS.queue);
