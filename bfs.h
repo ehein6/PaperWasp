@@ -1,19 +1,5 @@
 #include "graph.h"
-
-typedef struct sliding_queue
-{
-    // Next available slot in the queue
-    long next;
-    // Start and end of the current window
-    long start;
-    long end;
-    // Index of the current window
-    long window;
-    // Storage for items in the queue
-    long * buffer;
-    // Starting positions of each window
-    long * heads;
-} sliding_queue;
+#include "sliding_queue.h"
 
 typedef struct bfs_data {
     // Switch to remote write algorithm
