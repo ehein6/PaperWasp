@@ -4,6 +4,7 @@
 #include <cilk/cilk.h>
 #include <emu_c_utils/emu_c_utils.h>
 #include <stdio.h>
+#include "ack_control.h"
 
 // Global replicated struct with BFS data pointers
 replicated bfs_data BFS;
@@ -55,10 +56,12 @@ bfs_deinit()
 static inline void
 mark_neighbors(long src, long * edges_begin, long * edges_end)
 {
+    ack_control_disable_acks();
     for (long * e = edges_begin; e < edges_end; ++e) {
         long dst = *e;
         BFS.new_parent[dst] = src; // Remote write
     }
+    ack_control_reenable_acks();
 }
 
 static inline long
