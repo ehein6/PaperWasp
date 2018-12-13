@@ -39,6 +39,7 @@ void bfs_init(long use_remote_writes)
     init_striped_array(&BFS.new_parent, G.num_vertices);
     sliding_queue_replicated_init(&BFS.queue, G.num_vertices);
     bfs_data_clear();
+    ack_control_init();
 }
 
 void
