@@ -57,12 +57,10 @@ bfs_deinit()
 static inline void
 mark_neighbors(long src, long * edges_begin, long * edges_end)
 {
-    ack_control_disable_acks();
     for (long * e = edges_begin; e < edges_end; ++e) {
         long dst = *e;
         BFS.new_parent[dst] = src; // Remote write
     }
-    ack_control_reenable_acks();
 }
 
 static inline long
@@ -152,9 +150,11 @@ mark_queue_neighbors_worker(long begin, long end, va_list args)
 void
 mark_queue_neighbors(sliding_queue * queue)
 {
+    ack_control_disable_acks();
     emu_local_for(queue->start, queue->end, MY_LOCAL_GRAIN_MIN(queue->end - queue->start, 8),
         mark_queue_neighbors_worker, queue->buffer
     );
+    ack_control_reenable_acks();
 }
 
 // Core of the migrating-threads BFS variant
