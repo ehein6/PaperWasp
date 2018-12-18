@@ -23,15 +23,28 @@ bitmap_replicated_free(bitmap * self)
     mw_free(self->words);
 }
 
-// Clear all replicated copies
-static inline long
+// Set all bits to zero
+static inline void
+bitmap_clear(bitmap * self)
+{
+    // TODO parallelize with emu_local_for
+    for (long i = 0; i < self->num_words; ++i) {
+        self->words[i] = 0;
+    }
+}
+
+// Set all bits to zero in all replicated copies
+static inline void
 bitmap_replicated_clear(bitmap * self)
 {
-
+    for (long nlet = 0; nlet < NODELETS(); ++nlet) {
+        bitmap * remote_bitmap = mw_get_nth(self, nlet);
+        cilk_spawn_at(remote_bitmap) bitmap_clear(remote_bitmap);
+    }
 }
 
 // Broadcast to all other replicated copies to synchronize
-static inline long
+static inline void
 bitmap_sync(bitmap * self)
 {
     // For each non-zero word in the bitmap...
@@ -49,10 +62,10 @@ bitmap_sync(bitmap * self)
 }
 
 // Synchronize all replicated copies by combining information
-static inline long
+static inline void
 bitmap_replicated_sync(bitmap * self)
 {
-    for (long nlet = 0; i < NODELETS(); ++nlet) {
+    for (long nlet = 0; nlet < NODELETS(); ++nlet) {
         bitmap * remote_bitmap = mw_get_nth(self, nlet);
         cilk_spawn_at(remote_bitmap) bitmap_sync(remote_bitmap);
     }
@@ -93,15 +106,13 @@ bitmap_set_bit(bitmap * self, long pos)
 
 // Swap two bitmaps
 static inline void
-bitmap_swap_ptrs(bitmap ** a, bitmap ** b)
+bitmap_swap(bitmap * a, bitmap * b)
 {
-    bitmap * tmp = *a;
-    *a = *b;
-    *b = tmp;
+    long * words = a->words;
+    a->words = b->words;
+    b->words = words;
+
+    long num_words = a->num_words;
+    a->num_words = b->num_words;
+    b->num_words = num_words;
 }
-
-replicated bitmap bitmap_A;
-replicated bitmap bitmap_B;
-
-replicated bitmap * frontier;
-replicated bitmap * next_frontier;

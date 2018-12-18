@@ -22,5 +22,7 @@ include_directories(.)
 add_executable(bfs
     graph.h
     graph_from_edge_list.c graph_from_edge_list.h
-    bfs.c
-    main.c)
+    bfs.c bfs.h
+    hybrid_bfs.c hybrid_bfs.h
+    main.c
+)
