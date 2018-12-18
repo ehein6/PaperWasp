@@ -22,7 +22,7 @@ typedef struct hybrid_bfs_data {
 extern replicated hybrid_bfs_data BFS;
 
 void hybrid_bfs_init(long use_remote_writes);
-void hybrid_bfs_run (long source);
+void hybrid_bfs_run (long source, long alpha, long beta);
 void hybrid_bfs_data_clear();
 void hybrid_bfs_deinit();
 

@@ -19,10 +19,9 @@ include_directories(${EMU_C_UTILS_INCLUDE_DIRS})
 
 
 include_directories(.)
-add_executable(bfs
+add_executable(hybrid_bfs
     graph.h
     graph_from_edge_list.c graph_from_edge_list.h
-    bfs.c bfs.h
     hybrid_bfs.c hybrid_bfs.h
     main.c
 )

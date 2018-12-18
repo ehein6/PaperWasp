@@ -3,7 +3,7 @@
 #include <limits.h>
 
 #include "graph_from_edge_list.h"
-#include "bfs.h"
+#include "hybrid_bfs.h"
 
 #define LCG_MUL64 6364136223846793005ULL
 #define LCG_ADD64 1
@@ -38,6 +38,8 @@ const struct option long_options[] = {
     {"heavy_threshold"  , required_argument},
     {"num_samples"      , required_argument},
     {"algorithm"        , required_argument},
+    {"alpha"            , required_argument},
+    {"beta"            , required_argument},
     {"help"             , no_argument},
     {NULL}
 };
@@ -50,6 +52,8 @@ print_help(const char* argv0)
     LOG("\t--heavy_threshold    Vertices with this many neighbors will be spread across nodelets\n");
     LOG("\t--num_samples        Run BFS against this many random vertices\n");
     LOG("\t--algorithm          Select BFS implementation to run\n");
+    LOG("\t--alpha              Alpha parameter for direction-optimizing BFS\n");
+    LOG("\t--beta               Beta parameter for direction-optimizing BFS\n");
     LOG("\t--help               Print command line help\n");
 }
 
@@ -58,6 +62,8 @@ typedef struct bfs_args {
     long heavy_threshold;
     long num_samples;
     const char* algorithm;
+    long alpha;
+    long beta;
 } bfs_args;
 
 struct bfs_args
@@ -68,6 +74,8 @@ parse_args(int argc, char *argv[])
     args.heavy_threshold = LONG_MAX;
     args.num_samples = 1;
     args.algorithm = "remote_writes";
+    args.alpha = 15;
+    args.beta = 18;
 
     int option_index;
     while (true)
@@ -91,6 +99,10 @@ parse_args(int argc, char *argv[])
             args.num_samples = atol(optarg);
         } else if (!strcmp(option_name, "algorithm")) {
             args.algorithm = optarg;
+        } else if (!strcmp(option_name, "alpha")) {
+            args.alpha = atol(optarg);
+        } else if (!strcmp(option_name, "beta")) {
+            args.beta = atol(optarg);
         } else if (!strcmp(option_name, "help")) {
             print_help(argv[0]);
             exit(1);
@@ -99,6 +111,8 @@ parse_args(int argc, char *argv[])
     if (args.graph_filename == NULL) { LOG( "Missing graph filename"); exit(1); }
     if (args.heavy_threshold <= 0) { LOG( "heavy_threshold must be > 0"); exit(1); }
     if (args.num_samples <= 0) { LOG( "num_samples must be > 0"); exit(1); }
+    if (args.alpha <= 0) { LOG( "alpha must be > 0"); exit(1); }
+    if (args.beta <= 0) { LOG( "beta must be > 0"); exit(1); }
     return args;
 }
 
@@ -131,7 +145,7 @@ int main(int argc, char ** argv)
         LOG("Algorithm '%s' not implemented!\n", args.algorithm);
         exit(1);
     }
-    bfs_init(use_remote_writes);
+    hybrid_bfs_init(use_remote_writes);
 
     // Initialize RNG with deterministic seed
     unsigned long lcg_state = 0;
@@ -148,14 +162,14 @@ int main(int argc, char ** argv)
         // Run the BFS
         hooks_set_attr_i64("source_vertex", source);
         hooks_region_begin("bfs");
-        bfs_run(source);
+        hybrid_bfs_run(source, args.alpha, args.beta);
         double time_ms = hooks_region_end();
         // Output results
         LOG("Completed in %3.2f ms, %3.2f MTEPS \n",
             time_ms, (1e-6 * G.num_edges) / (time_ms / 1000)
         );
         // Reset for next run
-        bfs_data_clear();
+        hybrid_bfs_data_clear();
     }
     return 0;
 }
