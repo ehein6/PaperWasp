@@ -69,8 +69,14 @@ typedef struct graph {
 extern replicated graph G;
 
 static inline bool
-is_heavy(long vertex_id)
+is_heavy_out(long vertex_id)
 {
     // TODO it would be great if this were a local query, maybe a replicated bitmap?
     return G.vertex_out_degree[vertex_id] >= G.heavy_threshold;
+}
+
+static inline bool
+is_heavy_in(long vertex_id)
+{
+    return G.vertex_in_degree[vertex_id] >= G.heavy_threshold;
 }

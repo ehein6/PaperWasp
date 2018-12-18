@@ -130,7 +130,7 @@ mark_queue_neighbors_worker(long begin, long end, va_list args)
     for (long v = begin; v < end; ++v) {
         long src = vertex_queue[v];
         // How big is this vertex?
-        if (is_heavy(src)) {
+        if (is_heavy_out(src)) {
             // Heavy vertex, spawn a thread for each remote edge block
             edge_block * eb = G.vertex_out_neighbors[src].repl_edge_block;
             for (long i = 0; i < NODELETS(); ++i) {
@@ -216,7 +216,7 @@ explore_frontier_spawner(long begin, long end, va_list args)
     for (long v = begin; v < end; ++v) {
         long src = vertex_queue[v];
         // How big is this vertex?
-        if (is_heavy(src)) {
+        if (is_heavy_out(src)) {
             // Heavy vertex, spawn a thread for each remote edge block
             edge_block * eb = G.vertex_out_neighbors[src].repl_edge_block;
             for (long i = 0; i < NODELETS(); ++i) {
