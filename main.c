@@ -128,7 +128,7 @@ int main(int argc, char ** argv)
     } else if (!strcmp(args.algorithm, "migrating_threads")) {
         use_remote_writes = false;
     } else {
-        LOG("Algorithm '%s' not implemented!\n");
+        LOG("Algorithm '%s' not implemented!\n", args.algorithm);
         exit(1);
     }
     bfs_init(use_remote_writes);

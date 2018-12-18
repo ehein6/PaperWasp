@@ -48,10 +48,12 @@ typedef struct graph {
     // Distributed vertex array
     // number of neighbors for this vertex (on all nodelets)
     long * vertex_out_degree;
+    long * vertex_in_degree;
 
     // Pointer to local edge array (light vertices only)
     // OR replicated edge block pointer (heavy vertices only)
-    neighbors * vertex_neighbors;
+    neighbors * vertex_out_neighbors;
+    neighbors * vertex_in_neighbors;
 
     // Total number of edges stored on each nodelet
     long num_local_edges;

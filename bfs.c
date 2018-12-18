@@ -132,13 +132,13 @@ mark_queue_neighbors_worker(long begin, long end, va_list args)
         // How big is this vertex?
         if (is_heavy(src)) {
             // Heavy vertex, spawn a thread for each remote edge block
-            edge_block * eb = G.vertex_neighbors[src].repl_edge_block;
+            edge_block * eb = G.vertex_out_neighbors[src].repl_edge_block;
             for (long i = 0; i < NODELETS(); ++i) {
                 edge_block * remote_eb = mw_get_nth(eb, i);
                 cilk_spawn_at(remote_eb) mark_neighbors_in_eb(src, remote_eb);
             }
         } else {
-            long * edges_begin = G.vertex_neighbors[src].local_edges;
+            long * edges_begin = G.vertex_out_neighbors[src].local_edges;
             long * edges_end = edges_begin + G.vertex_out_degree[src];
             mark_neighbors_parallel(src, edges_begin, edges_end);
         }
@@ -218,13 +218,13 @@ explore_frontier_spawner(long begin, long end, va_list args)
         // How big is this vertex?
         if (is_heavy(src)) {
             // Heavy vertex, spawn a thread for each remote edge block
-            edge_block * eb = G.vertex_neighbors[src].repl_edge_block;
+            edge_block * eb = G.vertex_out_neighbors[src].repl_edge_block;
             for (long i = 0; i < NODELETS(); ++i) {
                 edge_block * remote_eb = mw_get_nth(eb, i);
                 cilk_spawn_at(remote_eb) explore_frontier_in_eb(src, remote_eb);
             }
         } else {
-            long * edges_begin = G.vertex_neighbors[src].local_edges;
+            long * edges_begin = G.vertex_out_neighbors[src].local_edges;
             long * edges_end = edges_begin + G.vertex_out_degree[src];
             explore_frontier_parallel(src, edges_begin, edges_end);
         }
