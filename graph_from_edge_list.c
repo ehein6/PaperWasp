@@ -336,8 +336,8 @@ in_edge_exists(long src, long dst)
     long * edges_end;
     if (is_heavy_out(src)) {
         edge_block * eb = mw_get_localto(
-            G.vertex_in_neighbors[src].repl_edge_block,
-            &G.vertex_in_neighbors[dst]
+            G.vertex_in_neighbors[dst].repl_edge_block,
+            &G.vertex_in_neighbors[src]
         );
         edges_begin = eb->edges;
         edges_end = edges_begin + eb->num_edges;
