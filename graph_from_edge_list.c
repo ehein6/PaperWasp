@@ -282,7 +282,7 @@ fill_edge_blocks_worker(long * array, long begin, long end, va_list args)
         } else {
             // Get the local edge array
             edges = G.vertex_in_neighbors[dst].local_edges;
-            num_edges_ptr = &G.vertex_out_degree[dst];
+            num_edges_ptr = &G.vertex_in_degree[dst];
         }
         // Atomically claim a position in the edge list and insert the edge
         // NOTE: Relies on all edge counters being set to zero in the previous step
