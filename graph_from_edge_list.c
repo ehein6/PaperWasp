@@ -300,13 +300,16 @@ void scatter_edge_list_worker(long begin, long end, va_list args)
 }
 
 bool
-edge_exists(long src, long dst)
+out_edge_exists(long src, long dst)
 {
     // Find the edge block that would contain this neighbor
     long * edges_begin;
     long * edges_end;
     if (is_heavy_out(src)) {
-        edge_block * eb = mw_get_localto(G.vertex_out_neighbors[src].repl_edge_block, &G.vertex_out_neighbors[dst]);
+        edge_block * eb = mw_get_localto(
+            G.vertex_out_neighbors[src].repl_edge_block,
+            &G.vertex_out_neighbors[dst]
+        );
         edges_begin = eb->edges;
         edges_end = edges_begin + eb->num_edges;
     } else {
@@ -325,13 +328,46 @@ edge_exists(long src, long dst)
     return false;
 }
 
+bool
+in_edge_exists(long src, long dst)
+{
+    // Find the edge block that would contain this neighbor
+    long * edges_begin;
+    long * edges_end;
+    if (is_heavy_out(src)) {
+        edge_block * eb = mw_get_localto(
+            G.vertex_in_neighbors[src].repl_edge_block,
+            &G.vertex_in_neighbors[dst]
+        );
+        edges_begin = eb->edges;
+        edges_end = edges_begin + eb->num_edges;
+    } else {
+        edges_begin = G.vertex_in_neighbors[dst].local_edges;
+        edges_end = edges_begin + G.vertex_in_degree[dst];
+    }
+
+    // Search for the neighbor
+    for (long * e = edges_begin; e < edges_end; ++e) {
+        assert(*e >= 0);
+        assert(*e < G.num_vertices);
+        if (*e == src) { return true; }
+    }
+
+    // Neighbor not found
+    return false;
+}
+
+
 void check_graph_worker(long * array, long begin, long end, va_list args)
 {
     for (long i = begin; i < end; i += NODELETS()) {
         long src = G.dist_edge_list_src[i];
         long dst = G.dist_edge_list_dst[i];
-        if (!edge_exists(src, dst)) {
-            LOG("Missing edge %li->%li\n", src, dst);
+        if (!out_edge_exists(src, dst)) {
+            LOG("Missing out edge for %li->%li\n", src, dst);
+        }
+        if (!in_edge_exists(src, dst)) {
+            LOG("Missing in edge for %li->%li\n", src, dst);
         }
     }
 }
