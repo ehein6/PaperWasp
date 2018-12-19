@@ -531,27 +531,27 @@ hybrid_bfs_run (long source, long alpha, long beta)
         if (scout_count > edges_to_check / alpha) {
             long awake_count, old_awake_count;
             // Convert sliding queue to bitmap
-            hooks_region_begin("queue_to_bitmap");
+            // hooks_region_begin("queue_to_bitmap");
             queue_to_bitmap(&HYBRID_BFS.queue, &HYBRID_BFS.frontier);
-            hooks_region_end();
+            // hooks_region_end();
             awake_count = sliding_queue_combined_size(&HYBRID_BFS.queue);
             sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
             // Do bottom-up steps for a while
             do {
                 old_awake_count = awake_count;
-                hooks_region_begin("bottom_up_step");
+                // hooks_region_begin("bottom_up_step");
                 awake_count = bottom_up_step();
                 bitmap_swap(&HYBRID_BFS.frontier, &HYBRID_BFS.next_frontier);
-                hooks_region_end();
+                // hooks_region_end();
             } while (awake_count >= old_awake_count ||
                     (awake_count > G.num_vertices / beta));
             // Convert back to a queue
-            hooks_region_begin("bitmap_to_queue");
+            // hooks_region_begin("bitmap_to_queue");
             bitmap_to_queue(&HYBRID_BFS.frontier, &HYBRID_BFS.queue);
-            hooks_region_end();
+            // hooks_region_end();
             scout_count = 1;
         } else {
-            hooks_region_begin("top_down_step");
+            // hooks_region_begin("top_down_step");
             edges_to_check -= scout_count;
             if (HYBRID_BFS.use_remote_writes) {
                 scout_count = top_down_step_with_remote_writes();
