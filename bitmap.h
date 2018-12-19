@@ -12,7 +12,7 @@ bitmap_replicated_init(bitmap * self, long n)
     // We need n bits, divide by 64 and round up to get number of words
     long num_words = (n + 63) / 64;
     mw_replicated_init(&self->num_words, num_words);
-    long * buffer = mw_mallocrepl(num_words);
+    long * buffer = mw_mallocrepl(num_words * sizeof(long));
     assert(buffer);
     mw_replicated_init((long*)&self->words, (long)buffer);
 }
