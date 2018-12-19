@@ -503,7 +503,7 @@ bottom_up_step()
     // TODO we can do the clear in parallel with other stuff
     bitmap_replicated_clear(&HYBRID_BFS.next_frontier);
     emu_1d_array_apply((long*)&G.vertex_in_degree, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 64),
-        search_for_parent_worker, awake_count
+        search_for_parent_worker, &awake_count
     );
     // TODO we can start the sync early at each nodelet once all local vertices are done
     bitmap_replicated_sync(&HYBRID_BFS.next_frontier);
