@@ -187,7 +187,7 @@ long compute_max_edges_per_nodelet()
     }
 
     // Double-check that we haven't lost any edges
-    assert(check_total_edges == G.num_edges);
+    assert(check_total_edges == 2 * G.num_edges);
     return max_edges_per_nodelet;
 }
 
