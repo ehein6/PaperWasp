@@ -334,7 +334,7 @@ in_edge_exists(long src, long dst)
     // Find the edge block that would contain this neighbor
     long * edges_begin;
     long * edges_end;
-    if (is_heavy_out(src)) {
+    if (is_heavy_in(dst)) {
         edge_block * eb = mw_get_localto(
             G.vertex_in_neighbors[dst].repl_edge_block,
             &G.vertex_in_neighbors[src]
