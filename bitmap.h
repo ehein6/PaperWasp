@@ -1,5 +1,7 @@
 #pragma once
 
+#include <emu_c_utils/emu_c_utils.h>
+
 typedef struct bitmap
 {
     long * words;

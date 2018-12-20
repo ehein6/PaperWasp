@@ -17,11 +17,19 @@ find_package(emu_c_utils REQUIRED)
 link_libraries(${EMU_C_UTILS_LIBRARIES})
 include_directories(${EMU_C_UTILS_INCLUDE_DIRS})
 
+# Enable libc extenstions like getline
+add_definitions(-D_XOPEN_SOURCE=700)
 
 include_directories(.)
 add_executable(hybrid_bfs
+    ack_control.h
+    bitmap.h
     graph.h
-    graph_from_edge_list.c graph_from_edge_list.h
-    hybrid_bfs.c hybrid_bfs.h
+    graph_from_edge_list.h
+    graph_from_edge_list.c
+    load_edge_list.h
+    load_edge_list.c
+    hybrid_bfs.h
+    hybrid_bfs.c
     main.c
 )

@@ -1,12 +1,13 @@
 #pragma once
 
-#ifdef __le64__
-#include <memoryweb.h>
-#else
-#include <emu_c_utils/memoryweb_x86.h>
+#include <emu_c_utils/emu_c_utils.h>
+
+// HACK until these macros are added to memoryweb_x86
+#ifndef DISABLE_ACKS
 #define DISABLE_ACKS()
 #define ENABLE_ACKS()
 #endif
+
 
 // One element on each nodelet
 volatile replicated long * ack_control_data;

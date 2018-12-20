@@ -7,52 +7,10 @@
 #include <emu_c_utils/emu_c_utils.h>
 
 #include "graph.h"
+#include "load_edge_list.h"
 
 // Global, replicated struct for storing pointers to graph data structures
 replicated graph G;
-
-int64_t
-count_edges(const char* path)
-{
-    struct stat st;
-    if (stat(path, &st) != 0)
-    {
-        LOG("Failed to stat %s\n", path);
-        exit(1);
-    }
-    int64_t num_edges = st.st_size / sizeof(edge);
-    return num_edges;
-}
-
-edge_list
-load_edge_list_binary(const char* path)
-{
-    LOG("Checking file size of %s...\n", path);
-    FILE* fp = fopen(path, "rb");
-    if (fp == NULL) {
-        LOG("Unable to open %s\n", path);
-        exit(1);
-    }
-    int64_t num_edges = count_edges(path);
-    edge_list el;
-    el.num_edges = num_edges;
-    // HACK assuming nv
-    el.num_vertices = el.num_edges / 16;
-    el.edges = mw_localmalloc(sizeof(edge) * num_edges, &el);
-    if (el.edges == NULL) {
-        LOG("Failed to allocate memory for %ld edges\n", num_edges);
-        exit(1);
-    }
-
-    LOG("Preloading %li edges from %s...\n", num_edges, path);
-    size_t rc = fread(&el.edges[0], sizeof(edge), num_edges, fp);
-    if (rc != num_edges) {
-        LOG("Failed to load edge list from %s\n",path);
-        exit(1);
-    }
-    fclose(fp);
-    return el;
-}
 
 
 void
@@ -72,8 +30,8 @@ calculate_degrees_worker(long * array, long begin, long end, va_list args)
     (void)array;
     // For each edge, increment the degree of its source vertex using a remote atomic
     for (long i = begin; i < end; i += NODELETS()) {
-        long src = G.dist_edge_list_src[i];
-        long dst = G.dist_edge_list_dst[i];
+        long src = EL.src[i];
+        long dst = EL.dst[i];
         REMOTE_ADD(&G.vertex_out_degree[src], 1);
         REMOTE_ADD(&G.vertex_in_degree[dst],  1);
     }
@@ -85,10 +43,10 @@ compute_edge_blocks_sizes_worker(long * array, long begin, long end, va_list arg
     (void)array;
     // For each edge that belongs to a heavy vertex...
     for (long i = begin; i < end; i += NODELETS()) {
-        long src = G.dist_edge_list_src[i];
+        long src = EL.src[i];
         if (is_heavy_out(src)) {
             // Find the edge block near the destination vertex
-            long dst = G.dist_edge_list_dst[i];
+            long dst = EL.dst[i];
             edge_block * local_eb = mw_get_localto(
                 G.vertex_out_neighbors[src].repl_edge_block,
                 &G.vertex_out_neighbors[dst]
@@ -96,10 +54,10 @@ compute_edge_blocks_sizes_worker(long * array, long begin, long end, va_list arg
             // Increment the edge count
             ATOMIC_ADDMS(&local_eb->num_edges, 1);
         }
-        long dst = G.dist_edge_list_dst[i];
+        long dst = EL.dst[i];
         if (is_heavy_in(dst)) {
             // Find the edge block near the source vertex
-            long src = G.dist_edge_list_src[i];
+            long src = EL.src[i];
             edge_block * local_eb = mw_get_localto(
                 G.vertex_in_neighbors[dst].repl_edge_block,
                 &G.vertex_in_neighbors[src]
@@ -245,8 +203,8 @@ fill_edge_blocks_worker(long * array, long begin, long end, va_list args)
 {
     // For each edge...
     for (long i = begin; i < end; i += NODELETS()) {
-        long src = G.dist_edge_list_src[i];
-        long dst = G.dist_edge_list_dst[i];
+        long src = EL.src[i];
+        long dst = EL.dst[i];
         // Pointer to local edge array for this vertex
         long * edges;
         // Pointer to current size of local edge array for this vertex
@@ -287,15 +245,6 @@ fill_edge_blocks_worker(long * array, long begin, long end, va_list args)
         // Atomically claim a position in the edge list and insert the edge
         // NOTE: Relies on all edge counters being set to zero in the previous step
         edges[ATOMIC_ADDMS(num_edges_ptr, 1)] = src;
-    }
-}
-
-void scatter_edge_list_worker(long begin, long end, va_list args)
-{
-    edge_list * el = va_arg(args, edge_list*);
-    for (long i = begin; i < end; ++i) {
-        G.dist_edge_list_src[i] = el->edges[i].src;
-        G.dist_edge_list_dst[i] = el->edges[i].dst;
     }
 }
 
@@ -361,8 +310,8 @@ in_edge_exists(long src, long dst)
 void check_graph_worker(long * array, long begin, long end, va_list args)
 {
     for (long i = begin; i < end; i += NODELETS()) {
-        long src = G.dist_edge_list_src[i];
-        long dst = G.dist_edge_list_dst[i];
+        long src = EL.src[i];
+        long dst = EL.dst[i];
         if (!out_edge_exists(src, dst)) {
             LOG("Missing out edge for %li->%li\n", src, dst);
         }
@@ -375,18 +324,9 @@ void check_graph_worker(long * array, long begin, long end, va_list args)
 // Compare the edge list with the constructed graph
 // VERY SLOW, use only for testing
 void check_graph() {
-    emu_1d_array_apply(G.dist_edge_list_src, G.num_edges, GLOBAL_GRAIN(G.num_edges),
+    emu_1d_array_apply(EL.src, G.num_edges, GLOBAL_GRAIN(G.num_edges),
         check_graph_worker
     );
-}
-
-void dump_edge_list()
-{
-    for (long i = 0; i < G.num_edges; ++i) {
-        long src = G.dist_edge_list_src[i];
-        long dst = G.dist_edge_list_dst[i];
-        LOG ("%li -> %li\n", src, dst);
-    }
 }
 
 void dump_graph()
@@ -416,26 +356,11 @@ void dump_graph()
 }
 
 void
-load_graph_from_edge_list(const char* filename, bool bidirectional)
+construct_graph_from_edge_list(long heavy_threshold)
 {
-    // Load edges from disk into local array
-    edge_list el = load_edge_list_binary(filename);
-
-    mw_replicated_init(&G.num_edges, el.num_edges);
-    mw_replicated_init(&G.num_vertices, el.num_vertices);
-
-    // Create distributed edge list
-    LOG("Allocating distributed edge list...\n");
-    init_striped_array(&G.dist_edge_list_src, G.num_edges);
-    init_striped_array(&G.dist_edge_list_dst, G.num_edges);
-
-    LOG("Initializing distributed edge list...\n");
-    // Scatter from local to distributed edge list
-    hooks_region_begin("scatter_edge_list");
-    emu_local_for(0, G.num_edges, LOCAL_GRAIN_MIN(G.num_edges, 256),
-        scatter_edge_list_worker, &el
-    );
-    hooks_region_end();
+    mw_replicated_init(&G.num_edges, EL.num_edges);
+    mw_replicated_init(&G.num_vertices, EL.num_vertices);
+    mw_replicated_init(&G.heavy_threshold, heavy_threshold);
 
     LOG("Initializing distributed vertex list...\n");
     // Create and initialize distributed vertex list
@@ -458,7 +383,7 @@ load_graph_from_edge_list(const char* filename, bool bidirectional)
         init_degrees_worker
     );
     // Scan the edge list and do remote atomic adds into vertex_out_degree
-    emu_1d_array_apply(G.dist_edge_list_src, G.num_edges, edge_list_grain,
+    emu_1d_array_apply(EL.src, G.num_edges, edge_list_grain,
         calculate_degrees_worker
     );
     hooks_region_end();
@@ -479,7 +404,7 @@ load_graph_from_edge_list(const char* filename, bool bidirectional)
     // and do atomic adds into the local edge block
     LOG("Computing edge block sizes...\n");
     hooks_region_begin("compute_edge_block_sizes");
-    emu_1d_array_apply(G.dist_edge_list_src, G.num_edges, edge_list_grain,
+    emu_1d_array_apply(EL.src, G.num_edges, edge_list_grain,
         compute_edge_blocks_sizes_worker
     );
     hooks_region_end();
@@ -524,10 +449,13 @@ load_graph_from_edge_list(const char* filename, bool bidirectional)
     // atomically increment eb->nedgesblk to find out where it goes
     LOG("Filling edge blocks...\n");
     hooks_region_begin("fill_edge_blocks");
-    emu_1d_array_apply(G.dist_edge_list_src, G.num_edges, edge_list_grain,
+    emu_1d_array_apply(EL.src, G.num_edges, edge_list_grain,
         fill_edge_blocks_worker
     );
     hooks_region_end();
+
+    // check_graph();
+    dump_graph();
 
     LOG("...Done\n");
 }

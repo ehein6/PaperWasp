@@ -3,22 +3,6 @@
 #include <emu_c_utils/emu_c_utils.h>
 #include "common.h"
 
-typedef struct edge {
-    long src;
-    long dst;
-} edge;
-
-typedef struct edge_list
-{
-    // Number of edges in the array
-    long num_edges;
-    // Number of vertices in the edge list;
-    // All vertex ID's are guaranteed to be < num_vertices
-    long num_vertices;
-    // Pointer to local array of edges
-    edge * edges;
-} edge_list;
-
 typedef struct edge_block {
     long num_edges;
     long * edges;
@@ -35,11 +19,6 @@ typedef union neighbors
 
 // Global data structures
 typedef struct graph {
-    // Distributed edge list that the graph will be created from.
-    // First array stores source vertex ID, second array stores dest vertex ID
-    long * dist_edge_list_src;
-    long * dist_edge_list_dst;
-
     // Total number of edges in the graph
     long num_edges;
     // Total number of vertices in the graph (max vertex ID + 1)

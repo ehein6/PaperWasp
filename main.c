@@ -2,6 +2,7 @@
 #include <getopt.h>
 #include <limits.h>
 
+#include "load_edge_list.h"
 #include "graph_from_edge_list.h"
 #include "hybrid_bfs.h"
 
@@ -126,11 +127,13 @@ int main(int argc, char ** argv)
 
     // Parse command-line argumetns
     bfs_args args = parse_args(argc, argv);
+    hooks_set_attr_i64("heavy_threshold", args.heavy_threshold);
 
     // Load the graph
-    mw_replicated_init(&G.heavy_threshold, args.heavy_threshold);
-    hooks_set_attr_i64("heavy_threshold", args.heavy_threshold);
-    load_graph_from_edge_list(args.graph_filename);
+    hooks_region_begin("load_graph");
+    load_edge_list(args.graph_filename);
+    hooks_region_end();
+    construct_graph_from_edge_list(args.heavy_threshold);
     print_graph_distribution();
 
     // Initialize the algorithm
@@ -164,6 +167,14 @@ int main(int argc, char ** argv)
         hooks_region_begin("bfs");
         hybrid_bfs_run(source, args.alpha, args.beta);
         double time_ms = hooks_region_end();
+
+        LOG("Checking results...");
+        if (hybrid_bfs_check(source)) {
+            LOG("PASS\n")
+        } else {
+            LOG("FAIL\n");
+            hybrid_bfs_print_tree();
+        }
         // Output results
         LOG("Completed in %3.2f ms, %3.2f MTEPS \n",
             time_ms, (1e-6 * G.num_edges) / (time_ms / 1000)

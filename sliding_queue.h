@@ -16,12 +16,29 @@ typedef struct sliding_queue
 } sliding_queue;
 
 static inline void
+sliding_queue_reset(sliding_queue * self)
+{
+    self->next = 0;
+    self->start = 0;
+    self->end = 0;
+    self->window = 0;
+}
+
+static inline void
 sliding_queue_replicated_reset(sliding_queue * self)
 {
     mw_replicated_init(&self->next, 0);
     mw_replicated_init(&self->start, 0);
     mw_replicated_init(&self->end, 0);
     mw_replicated_init(&self->window, 0);
+}
+
+static inline void
+sliding_queue_init(sliding_queue * self, long size)
+{
+    self->buffer = mw_localmalloc(size * sizeof(long), self);
+    self->heads  = mw_localmalloc(size * sizeof(long), self);
+    sliding_queue_reset(self);
 }
 
 static inline void

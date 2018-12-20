@@ -528,7 +528,7 @@ hybrid_bfs_run (long source, long alpha, long beta)
     // While there are vertices in the queue...
     while (!sliding_queue_all_empty(&HYBRID_BFS.queue)) {
 
-        if (scout_count > edges_to_check / alpha) {
+        if (false) {//scout_count > edges_to_check / alpha) {
             long awake_count, old_awake_count;
             // Convert sliding queue to bitmap
             // hooks_region_begin("queue_to_bitmap");
@@ -560,13 +560,155 @@ hybrid_bfs_run (long source, long alpha, long beta)
             }
             // Slide all queues to explore the next frontier
             sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
-            hooks_region_end();
+            // hooks_region_end();
         }
     }
 }
 
+
+typedef struct cursor
+{
+    // Pointer to current edge
+    long * e;
+    // Pointer to last edge in block
+    long * end;
+    // Pointer to current edge block (ignored for light vertex)
+    edge_block * eb;
+    // Index of current nodelet (ignored for light vertex)
+    long nlet;
+} cursor;
+
 void
-bfs_print_tree()
+cursor_init_out(cursor * c, long src)
+{
+    if (is_heavy_out(src)) {
+        c->nlet = 0;
+        c->eb = mw_get_nth(G.vertex_out_neighbors[src].repl_edge_block, 0);
+        c->e = c->eb->edges;
+        c->end = c->e + c->eb->num_edges;
+    } else {
+        c->eb = NULL;
+        c->e = G.vertex_out_neighbors[src].local_edges;
+        c->end = c->e + G.vertex_out_degree[src];
+    }
+}
+
+void
+cursor_init_in(cursor * c, long dst)
+{
+    if (is_heavy_in(dst)) {
+        c->nlet = 0;
+        c->eb = mw_get_nth(G.vertex_in_neighbors[dst].repl_edge_block, 0);
+        c->e = c->eb->edges;
+        c->end = c->e + c->eb->num_edges;
+    } else {
+        c->eb = NULL;
+        c->e = G.vertex_in_neighbors[dst].local_edges;
+        c->end = c->e + G.vertex_in_degree[dst];
+    }
+}
+
+// Move to next edge
+void
+cursor_next(cursor * c)
+{
+    if (!c->e) { return; }
+    // Move to the next edge
+    c->e++;
+    // Check for end of array
+    if (c->e >= c->end) {
+        // If this was a light vertex, we're done
+        if (!c->eb) {
+            c->e = NULL;
+        // If this was a heavy vertex, move to the next edge block
+        } else {
+            c->nlet++;
+            if (c->nlet >= NODELETS()) {
+                c->e = NULL;
+            }
+            c->eb = mw_get_nth(c->eb, c->nlet);
+            c->e = c->eb->edges;
+            c->end = c->e + c->eb->num_edges;
+        }
+    }
+}
+
+
+bool
+hybrid_bfs_check(long source)
+{
+    // Local array to store the depth of each vertex in the tree
+    long * depth = mw_localmalloc(G.num_vertices * sizeof(long), &depth);
+    assert(depth);
+    for (long i = 0; i < G.num_vertices; ++i) { depth[i] = -1; }
+
+    // Do a serial BFS
+    cursor c;
+    sliding_queue q;
+    sliding_queue_init(&q, G.num_vertices);
+    sliding_queue_push_back(&q, source);
+    // For each vertex in the queue...
+    for (long i = q.start; i < q.end; ++i) {
+        long u = q.buffer[i];
+        // For each out-neighbor of this vertex...
+        for (cursor_init_out(&c, u); c.e; cursor_next(&c)) {
+            long v = *c.e;
+            // Add unexplored neighbors to the queue
+            if (depth[v] == -1) {
+                depth[v] = depth[u] + 1;
+                sliding_queue_push_back(&q, v);
+            }
+        }
+    }
+
+    // Check each vertex
+    // We are comparing the parent array produced by the parallel BFS
+    // with the depth array produced by the serial BFS
+    long * parent = HYBRID_BFS.parent;
+    for (long u = 0; u < G.num_vertices; ++u) {
+        // Is the vertex a part of both BFS trees?
+        if (depth[u] != -1 && parent[u] != -1) {
+
+            // Special case for source vertex
+            if (u == source) {
+                if (!((parent[u] == u) && (depth[u] == 0))) {
+                    LOG("Source wrong\n");
+                    return false;
+                }
+                continue;
+            }
+
+            // Verify that this vertex is connected to its parent
+            bool parent_found = false;
+            // For all in-edges...
+            for (cursor_init_in(&c, u); c.e; cursor_next(&c)) {
+                long v = *c.e;
+                // If v is the parent of u, their depths should differ by 1
+                if (v == parent[u]) {
+                    if (depth[v] != depth[u] - 1) {
+                        LOG("Wrong depths for %li and %li\n", u, v);
+                        return false;
+                    }
+                    parent_found = true;
+                    break;
+                }
+            }
+            if (!parent_found) {
+                LOG("Couldn't find edge from %li to %li\n", parent[u], u);
+                return false;
+            }
+        // Do both trees agree about
+        } else if (depth[u] != parent[u]) {
+            LOG("Reachability mismatch: depth[%li] = %li, parent[%li] = %li\n",
+                u, depth[u], u, parent[u]);
+            return false;
+        }
+    }
+    return true;
+}
+
+void
+hybrid_bfs_print_tree()
 {
     for (long v = 0; v < G.num_vertices; ++v) {
         long parent = HYBRID_BFS.parent[v];
