@@ -172,11 +172,14 @@ int main(int argc, char ** argv)
             LOG("PASS\n");
         } else {
             LOG("FAIL\n");
-            hybrid_bfs_print_tree();
+            // hybrid_bfs_print_tree();
         }
         // Output results
-        LOG("Completed in %3.2f ms, %3.2f MTEPS \n",
-            time_ms, (1e-6 * G.num_edges) / (time_ms / 1000)
+        long num_edges_traversed = hybrid_bfs_count_num_traversed_edges();
+        LOG("Traversed %li edges in %3.2f ms, %3.2f MTEPS \n",
+            num_edges_traversed,
+            time_ms,
+            (1e-6 * num_edges_traversed) / (time_ms / 1000)
         );
         // Reset for next run
         hybrid_bfs_data_clear();

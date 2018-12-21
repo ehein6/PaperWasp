@@ -344,6 +344,16 @@ top_down_step_with_migrating_threads()
 void
 dump_queue_stats()
 {
+    fprintf(stdout, "Queue contents: ");
+    for (long n = 0; n < NODELETS(); ++n) {
+        sliding_queue * local_queue = mw_get_nth(&HYBRID_BFS.queue, n);
+        for (long i = local_queue->start; i < local_queue->end; ++i) {
+            fprintf(stdout, "%li ", local_queue->buffer[i]);
+        }
+    }
+    fprintf(stdout, "\n");
+    fflush(stdout);
+
     fprintf(stdout, "Frontier size per nodelet: ");
     for (long n = 0; n < NODELETS(); ++n) {
         sliding_queue * local_queue = mw_get_nth(&HYBRID_BFS.queue, n);
@@ -608,6 +618,12 @@ cursor_init_in(cursor * c, long dst)
     }
 }
 
+bool
+cursor_valid(cursor * c)
+{
+    return c->e && c->e < c->end;
+}
+
 // Move to next edge
 void
 cursor_next(cursor * c)
@@ -654,7 +670,7 @@ hybrid_bfs_check(long source)
     for (long i = q.start; i < q.end; ++i) {
         long u = q.buffer[i];
         // For each out-neighbor of this vertex...
-        for (cursor_init_out(&c, u); c.e; cursor_next(&c)) {
+        for (cursor_init_out(&c, u); cursor_valid(&c); cursor_next(&c)) {
             long v = *c.e;
             // Add unexplored neighbors to the queue
             if (depth[v] == -1) {
@@ -668,6 +684,7 @@ hybrid_bfs_check(long source)
     // Check each vertex
     // We are comparing the parent array produced by the parallel BFS
     // with the depth array produced by the serial BFS
+    bool correct = true;
     long * parent = HYBRID_BFS.parent;
     for (long u = 0; u < G.num_vertices; ++u) {
         // Is the vertex a part of both BFS trees?
@@ -677,7 +694,8 @@ hybrid_bfs_check(long source)
             if (u == source) {
                 if (!((parent[u] == u) && (depth[u] == 0))) {
                     LOG("Source wrong\n");
-                    return false;
+                    correct = false;
+                    break;
                 }
                 continue;
             }
@@ -685,13 +703,13 @@ hybrid_bfs_check(long source)
             // Verify that this vertex is connected to its parent
             bool parent_found = false;
             // For all in-edges...
-            for (cursor_init_in(&c, u); c.e; cursor_next(&c)) {
+            for (cursor_init_in(&c, u); cursor_valid(&c); cursor_next(&c)) {
                 long v = *c.e;
                 // If v is the parent of u, their depths should differ by 1
                 if (v == parent[u]) {
                     if (depth[v] != depth[u] - 1) {
                         LOG("Wrong depths for %li and %li\n", u, v);
-                        return false;
+                        break;
                     }
                     parent_found = true;
                     break;
@@ -699,16 +717,20 @@ hybrid_bfs_check(long source)
             }
             if (!parent_found) {
                 LOG("Couldn't find edge from %li to %li\n", parent[u], u);
-                return false;
+                correct = false;
+                break;
             }
         // Do both trees agree about whether this vertex is in the tree?
         } else if ((depth[u] < 0) != (parent[u] < 0)) {
             LOG("Reachability mismatch: depth[%li] = %li, parent[%li] = %li\n",
                 u, depth[u], u, parent[u]);
-            return false;
+            correct = false;
+            break;
         }
     }
-    return true;
+
+    mw_free(depth);
+    return correct;
 }
 
 void

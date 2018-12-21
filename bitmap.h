@@ -4,7 +4,7 @@
 
 typedef struct bitmap
 {
-    long * words;
+    unsigned long * words;
     long num_words;
 } bitmap;
 
@@ -52,7 +52,7 @@ bitmap_sync(bitmap * self)
     // For each non-zero word in the bitmap...
     // TODO parallelize with emu_local_for
     for (long i = 0; i < self->num_words; ++i) {
-        long * local_word = &self->words[i];
+        unsigned long * local_word = &self->words[i];
         if (*local_word != 0) {
             // Send a remote to combine with the copy on each nodelet
             for (long nlet = 0; i < NODELETS(); ++i) {
@@ -79,7 +79,7 @@ bitmap_word_offset(long n)
 {
     // divide by 64, the number of bits in a word
     // return n / 64;
-    return n >> 8;
+    return n >> 6;
 }
 
 static inline long
@@ -95,7 +95,19 @@ bitmap_get_bit(bitmap * self, long pos)
 {
     long word = bitmap_word_offset(pos);
     long bit = bitmap_bit_offset(pos);
-    return (self->words[word] >> bit) & 1L;
+    return self->words[word] & (1UL << bit);
+}
+
+static inline void
+bitmap_dump(bitmap * self)
+{
+    for (long i = 0; i < self->num_words * 64; ++i) {
+        if (bitmap_get_bit(self, i)) {
+            printf("%li ", i);
+        }
+    }
+    printf("\n");
+    fflush(stdout);
 }
 
 static inline void
@@ -103,14 +115,14 @@ bitmap_set_bit(bitmap * self, long pos)
 {
     long word = bitmap_word_offset(pos);
     long bit = bitmap_bit_offset(pos);
-    REMOTE_OR(&self->words[word], 1L << bit);
+    REMOTE_OR((long*)&self->words[word], 1UL << bit);
 }
 
 // Swap two bitmaps
 static inline void
 bitmap_swap(bitmap * a, bitmap * b)
 {
-    long * words = a->words;
+    unsigned long * words = a->words;
     a->words = b->words;
     b->words = words;
 

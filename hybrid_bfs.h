@@ -23,6 +23,7 @@ extern replicated hybrid_bfs_data BFS;
 
 void hybrid_bfs_init(long use_remote_writes);
 void hybrid_bfs_run (long source, long alpha, long beta);
+long hybrid_bfs_count_num_traversed_edges();
 bool hybrid_bfs_check(long source);
 void hybrid_bfs_print_tree();
 void hybrid_bfs_data_clear();
