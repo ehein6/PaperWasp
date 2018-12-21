@@ -646,7 +646,10 @@ hybrid_bfs_check(long source)
     cursor c;
     sliding_queue q;
     sliding_queue_init(&q, G.num_vertices);
+    // Push source into the queue
     sliding_queue_push_back(&q, source);
+    sliding_queue_slide_window(&q);
+    depth[source] = 0;
     // For each vertex in the queue...
     for (long i = q.start; i < q.end; ++i) {
         long u = q.buffer[i];
@@ -659,6 +662,7 @@ hybrid_bfs_check(long source)
                 sliding_queue_push_back(&q, v);
             }
         }
+        sliding_queue_slide_window(&q);
     }
 
     // Check each vertex
@@ -667,7 +671,7 @@ hybrid_bfs_check(long source)
     long * parent = HYBRID_BFS.parent;
     for (long u = 0; u < G.num_vertices; ++u) {
         // Is the vertex a part of both BFS trees?
-        if (depth[u] != -1 && parent[u] != -1) {
+        if (depth[u] >= 0 && parent[u] >= 0) {
 
             // Special case for source vertex
             if (u == source) {
@@ -697,8 +701,8 @@ hybrid_bfs_check(long source)
                 LOG("Couldn't find edge from %li to %li\n", parent[u], u);
                 return false;
             }
-        // Do both trees agree about
-        } else if (depth[u] != parent[u]) {
+        // Do both trees agree about whether this vertex is in the tree?
+        } else if ((depth[u] < 0) != (parent[u] < 0)) {
             LOG("Reachability mismatch: depth[%li] = %li, parent[%li] = %li\n",
                 u, depth[u], u, parent[u]);
             return false;
