@@ -528,7 +528,7 @@ hybrid_bfs_run (long source, long alpha, long beta)
     // While there are vertices in the queue...
     while (!sliding_queue_all_empty(&HYBRID_BFS.queue)) {
 
-        if (false) {//scout_count > edges_to_check / alpha) {
+        if (scout_count > edges_to_check / alpha) {
             long awake_count, old_awake_count;
             // Convert sliding queue to bitmap
             // hooks_region_begin("queue_to_bitmap");
