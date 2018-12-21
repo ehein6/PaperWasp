@@ -109,11 +109,11 @@ parse_args(int argc, char *argv[])
             exit(1);
         }
     }
-    if (args.graph_filename == NULL) { LOG( "Missing graph filename"); exit(1); }
-    if (args.heavy_threshold <= 0) { LOG( "heavy_threshold must be > 0"); exit(1); }
-    if (args.num_samples <= 0) { LOG( "num_samples must be > 0"); exit(1); }
-    if (args.alpha <= 0) { LOG( "alpha must be > 0"); exit(1); }
-    if (args.beta <= 0) { LOG( "beta must be > 0"); exit(1); }
+    if (args.graph_filename == NULL) { LOG( "Missing graph filename\n"); exit(1); }
+    if (args.heavy_threshold <= 0) { LOG( "heavy_threshold must be > 0\n"); exit(1); }
+    if (args.num_samples <= 0) { LOG( "num_samples must be > 0\n"); exit(1); }
+    if (args.alpha <= 0) { LOG( "alpha must be > 0\n"); exit(1); }
+    if (args.beta <= 0) { LOG( "beta must be > 0\n"); exit(1); }
     return args;
 }
 
@@ -130,9 +130,8 @@ int main(int argc, char ** argv)
     hooks_set_attr_i64("heavy_threshold", args.heavy_threshold);
 
     // Load the graph
-    hooks_region_begin("load_graph");
     load_edge_list(args.graph_filename);
-    hooks_region_end();
+    LOG("Constructing graph...\n");
     construct_graph_from_edge_list(args.heavy_threshold);
     print_graph_distribution();
 

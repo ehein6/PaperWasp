@@ -172,7 +172,6 @@ void
 init_dist_edge_list(long num_edges)
 {
     // Create distributed edge list
-    LOG("Allocating distributed edge list...\n");
     mw_replicated_init(&EL.num_edges, num_edges);
     init_striped_array(&EL.src, num_edges);
     init_striped_array(&EL.dst, num_edges);
@@ -191,9 +190,7 @@ scatter_edge_list_worker(long begin, long end, va_list args)
 void
 scatter_edges(edge_list * el)
 {
-    LOG("Initializing distributed edge list...\n");
     // Scatter from local to distributed edge list
-    hooks_region_begin("scatter_edge_list");
     emu_local_for(0, el->num_edges, LOCAL_GRAIN_MIN(el->num_edges, 256),
         scatter_edge_list_worker, el
     );
@@ -204,9 +201,16 @@ scatter_edges(edge_list * el)
 void load_edge_list(const char* filename)
 {
     edge_list el;
+
+    hooks_region_begin("load_graph");
     load_edge_list_local(filename, &el);
+    hooks_region_end();
+
     init_dist_edge_list(el.num_edges);
+
+    hooks_region_begin("scatter_edge_list");
     scatter_edges(&el);
+    hooks_region_end();
 }
 
 // void
