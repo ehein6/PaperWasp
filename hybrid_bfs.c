@@ -197,7 +197,7 @@ populate_next_frontier(long * array, long begin, long end, va_list args)
     long * scout_count = va_arg(args, long*);
     long local_scout_count = 0;
     for (long i = begin; i < end; i += NODELETS()) {
-        if (HYBRID_BFS.parent[i] < 0 && HYBRID_BFS.new_parent[i] < 0) {
+        if (HYBRID_BFS.parent[i] < 0 && HYBRID_BFS.new_parent[i] >= 0) {
             // Update count with degree of new vertex
             local_scout_count += -HYBRID_BFS.parent[i];
             // Set parent
