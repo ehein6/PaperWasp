@@ -12,6 +12,9 @@ static const struct option header_options[] = {
     {"num_edges"        , required_argument},
     {"is_sorted"        , no_argument},
     {"is_deduped"       , no_argument},
+    {"is_permuted"      , no_argument},
+    {"is_directed"      , no_argument},
+    {"is_undirected"    , no_argument},
     {"format"           , required_argument},
     {NULL}
 };
@@ -56,17 +59,29 @@ parse_edge_list_file_header(FILE* fp, edge_list_file_header *header)
     size_t line_len = 0;
     size_t rc = getline(&line, &line_len, fp);
     if (!rc) return;
+    line_len = strlen(line);
+
+    // Strip endline character
+    if (line[line_len-1] != '\n') {
+        LOG("Invalid edge list file header\n");
+        exit(1);
+    }
+    line[--line_len] = '\0';
 
     // Split on spaces
     //    Assumption: never more than 32 arguments in header
     const int max_argc = 32;
     char * argv[max_argc];
-    int argc = 0;
+    // Leave empty slot for expected program name
+    argv[0] = "dummy";
+    int argc = 1;
     char * token = strtok(line, " ");
     while (token && argc < max_argc) {
         argv[argc++] = token;
         token = strtok(NULL, " ");
     }
+    // Null terminator for argv
+    argv[argc] = NULL;
 
     // Assume default values
     header->num_vertices = -1;
@@ -75,6 +90,8 @@ parse_edge_list_file_header(FILE* fp, edge_list_file_header *header)
     header->is_deduped = false;
     header->format = NULL;
 
+    // Reset getopt
+    optind = 1;
     // Parse header like an option string
     int option_index;
     while (true)
@@ -84,7 +101,7 @@ parse_edge_list_file_header(FILE* fp, edge_list_file_header *header)
         if (c == -1) { break; }
         // Invalid arg
         if (c == '?') {
-            LOG( "Invalid edge list header\n");
+            LOG( "Invalid field edge list header\n");
             exit(1);
         }
         const char* option_name = header_options[option_index].name;
@@ -124,7 +141,7 @@ load_edge_list_local(const char* path, edge_list * el)
         exit(1);
     }
     // TODO add support for other formats
-    if (!strcmp(header.format, "el64")) {
+    if (!header.format || !!strcmp(header.format, "el64")) {
         LOG("Unsuppported edge list format %s\n", header.format);
         exit(1);
     }
