@@ -167,9 +167,9 @@ int main(int argc, char ** argv)
         hybrid_bfs_run(source, args.alpha, args.beta);
         double time_ms = hooks_region_end();
 
-        LOG("Checking results...");
+        LOG("Checking results...\n");
         if (hybrid_bfs_check(source)) {
-            LOG("PASS\n")
+            LOG("PASS\n");
         } else {
             LOG("FAIL\n");
             hybrid_bfs_print_tree();

@@ -39,5 +39,8 @@ void load_edge_list(const char* filename);
 // Reads from all nodelets at once
 void load_edge_list_distributed(const char* filename);
 
+// Print the edge list to stdout for debugging
+void dump_edge_list();
+
 // Single global instance of the distributed edge list
 extern replicated dist_edge_list EL;
