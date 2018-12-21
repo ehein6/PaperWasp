@@ -20,6 +20,10 @@ include_directories(${EMU_C_UTILS_INCLUDE_DIRS})
 # Enable libc extenstions like getline
 add_definitions(-D_XOPEN_SOURCE=700)
 
+if (NOT CMAKE_SYSTEM_NAME STREQUAL "Emu1")
+    add_subdirectory(generator)
+endif()
+
 include_directories(.)
 add_executable(hybrid_bfs
     ack_control.h
