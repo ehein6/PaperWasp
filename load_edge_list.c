@@ -169,9 +169,10 @@ load_edge_list_local(const char* path, edge_list * el)
 }
 
 void
-init_dist_edge_list(long num_edges)
+init_dist_edge_list(long num_vertices, long num_edges)
 {
     // Create distributed edge list
+    mw_replicated_init(&EL.num_vertices, num_vertices);
     mw_replicated_init(&EL.num_edges, num_edges);
     init_striped_array(&EL.src, num_edges);
     init_striped_array(&EL.dst, num_edges);
@@ -206,7 +207,7 @@ void load_edge_list(const char* filename)
     load_edge_list_local(filename, &el);
     hooks_region_end();
 
-    init_dist_edge_list(el.num_edges);
+    init_dist_edge_list(el.num_vertices, el.num_edges);
 
     hooks_region_begin("scatter_edge_list");
     scatter_edges(&el);

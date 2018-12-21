@@ -454,8 +454,9 @@ construct_graph_from_edge_list(long heavy_threshold)
     );
     hooks_region_end();
 
-    // check_graph();
-    dump_graph();
+    LOG("Checking graph...\n");
+    check_graph();
+    // dump_graph();
 
     LOG("...Done\n");
 }
