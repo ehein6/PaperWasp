@@ -627,6 +627,7 @@ cursor_next(cursor * c)
             c->nlet++;
             if (c->nlet >= NODELETS()) {
                 c->e = NULL;
+                return;
             }
             c->eb = mw_get_nth(c->eb, c->nlet);
             c->e = c->eb->edges;
