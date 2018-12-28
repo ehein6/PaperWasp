@@ -775,5 +775,6 @@ hybrid_bfs_count_num_traversed_edges()
 {
     return emu_1d_array_reduce_sum(HYBRID_BFS.parent, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 256),
         compute_num_traversed_edges_worker
-    );
+    ) / 2;
+    // Divide by two, since each undirected edge is counted twice
 }
