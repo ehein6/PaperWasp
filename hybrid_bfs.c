@@ -358,25 +358,33 @@ top_down_step_with_migrating_threads()
 void
 dump_queue_stats()
 {
-    fprintf(stdout, "Queue contents: ");
+    printf("Queue contents: ");
     for (long n = 0; n < NODELETS(); ++n) {
         sliding_queue * local_queue = mw_get_nth(&HYBRID_BFS.queue, n);
         for (long i = local_queue->start; i < local_queue->end; ++i) {
-            fprintf(stdout, "%li ", local_queue->buffer[i]);
+            printf("%li ", local_queue->buffer[i]);
         }
     }
-    fprintf(stdout, "\n");
+    printf("\n");
     fflush(stdout);
 
-    fprintf(stdout, "Frontier size per nodelet: ");
+    printf("Bitmap contents: ");
+    for (long n = 0; n < NODELETS(); ++n) {
+        bitmap * local_bitmap = mw_get_nth(&HYBRID_BFS.frontier, n);
+        bitmap_dump(local_bitmap);
+    }
+    printf("\n");
+    fflush(stdout);
+
+    printf("Frontier size per nodelet: ");
     for (long n = 0; n < NODELETS(); ++n) {
         sliding_queue * local_queue = mw_get_nth(&HYBRID_BFS.queue, n);
-        fprintf(stdout, "%li ", local_queue->end - local_queue->start);
+        printf("%li ", local_queue->end - local_queue->start);
     }
-    fprintf(stdout, "\n");
+    printf("\n");
     fflush(stdout);
 
-    fprintf(stdout, "Total out-degree per nodelet: ");
+    printf("Total out-degree per nodelet: ");
     for (long n = 0; n < NODELETS(); ++n) {
         long degree_sum = 0;
         sliding_queue * local_queue = mw_get_nth(&HYBRID_BFS.queue, n);
@@ -384,10 +392,10 @@ dump_queue_stats()
             long v = local_queue->buffer[i];
             degree_sum += G.vertex_out_degree[v];
         }
-        fprintf(stdout, "%li ", degree_sum);
+        printf("%li ", degree_sum);
     }
 
-    fprintf(stdout, "\n");
+    printf("\n");
     fflush(stdout);
 }
 
