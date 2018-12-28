@@ -25,7 +25,7 @@ MY_LOCAL_GRAIN_MIN(long n, long min_grain)
     return grain > min_grain ? grain : min_grain;
 }
 
-static void
+void
 queue_to_bitmap(sliding_queue * q, bitmap * b)
 {
     // TODO parallelize with emu_local_for
@@ -34,7 +34,21 @@ queue_to_bitmap(sliding_queue * q, bitmap * b)
     }
 }
 
-static void
+void
+queue_to_replicated_bitmap(sliding_queue * q, bitmap * b)
+{
+    // Transfer entries from the queue to the bitmap on each nodelet
+    for (long nlet = 0; nlet < NODELETS(); ++nlet) {
+        sliding_queue * remote_q = mw_get_nth(q, nlet);
+        bitmap * remote_b = mw_get_nth(b, nlet);
+        cilk_spawn_at(remote_q) queue_to_bitmap(remote_q, remote_b);
+    }
+    // Syncronize all bitmaps
+    cilk_sync;
+    bitmap_replicated_sync(b);
+}
+
+void
 bitmap_to_queue_worker(long * array, long begin, long end, va_list args)
 {
     bitmap * b = va_arg(args, bitmap*);
@@ -46,8 +60,8 @@ bitmap_to_queue_worker(long * array, long begin, long end, va_list args)
     }
 }
 
-static void
-bitmap_to_queue(bitmap * b, sliding_queue * q)
+void
+replicated_bitmap_to_queue(bitmap * b, sliding_queue * q)
 {
     // TODO parallelize with emu_local_for
     emu_1d_array_apply(G.vertex_out_degree, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 64),
@@ -377,20 +391,6 @@ dump_queue_stats()
     fflush(stdout);
 }
 
-void
-hybrid_bfs_dump()
-{
-    for (long v = 0; v < G.num_vertices; ++v) {
-        long parent = HYBRID_BFS.parent[v];
-        long new_parent = HYBRID_BFS.new_parent[v];
-        if (parent != -1) {
-            printf("parent[%li] = %li\n", v, parent);
-        }
-        if (new_parent != -1) {
-            printf("new_parent[%li] = %li\n", v, new_parent);
-        }
-    }
-}
 
 /**
  * Bottom-up BFS step
@@ -542,7 +542,7 @@ hybrid_bfs_run (long source, long alpha, long beta)
             long awake_count, old_awake_count;
             // Convert sliding queue to bitmap
             // hooks_region_begin("queue_to_bitmap");
-            queue_to_bitmap(&HYBRID_BFS.queue, &HYBRID_BFS.frontier);
+            queue_to_replicated_bitmap(&HYBRID_BFS.queue, &HYBRID_BFS.frontier);
             // hooks_region_end();
             awake_count = sliding_queue_combined_size(&HYBRID_BFS.queue);
             sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
@@ -557,7 +557,8 @@ hybrid_bfs_run (long source, long alpha, long beta)
                     (awake_count > G.num_vertices / beta));
             // Convert back to a queue
             // hooks_region_begin("bitmap_to_queue");
-            bitmap_to_queue(&HYBRID_BFS.frontier, &HYBRID_BFS.queue);
+            replicated_bitmap_to_queue(&HYBRID_BFS.frontier, &HYBRID_BFS.queue);
+            sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
             // hooks_region_end();
             scout_count = 1;
         } else {
@@ -666,6 +667,24 @@ hybrid_bfs_check(long source)
         sliding_queue_slide_window(&q);
     }
 
+    // // Dump the tree to stdout
+    // // For each level in the tree...
+    // bool is_level_empty = false;
+    // for (long current_depth = 0; !is_level_empty; ++current_depth) {
+    //     is_level_empty = true;
+    //     printf("Level %li:", current_depth);
+    //     for (long v = 0; v < G.num_vertices; ++v) {
+    //         // Print every vertex at this depth in the tree
+    //         if (depth[v] == current_depth) {
+    //             printf(" %li", v);
+    //             // Keep going as long as we find a vertex at each level
+    //             is_level_empty = false;
+    //         }
+    //     }
+    //     printf("\n");
+    // }
+    // fflush(stdout);
+
     // Check each vertex
     // We are comparing the parent array produced by the parallel BFS
     // with the depth array produced by the serial BFS
@@ -723,14 +742,19 @@ hybrid_bfs_print_tree()
 {
     for (long v = 0; v < G.num_vertices; ++v) {
         long parent = HYBRID_BFS.parent[v];
-        long new_parent = HYBRID_BFS.new_parent[v];
-        if (parent != -1) {
-            printf("parent[%li] = %li\n", v, parent);
+        if (parent < 0) { continue; }
+
+        printf("%4li", v);
+        // Climb the tree back to the root
+        while(true) {
+            LOG(" <- %4li", parent);
+            if (parent == -1) { break; }
+            if (parent == HYBRID_BFS.parent[parent]) { break; }
+            parent = HYBRID_BFS.parent[parent];
         }
-        if (new_parent != -1) {
-            printf("new_parent[%li] = %li\n", v, new_parent);
-        }
+        printf("\n");
     }
+    fflush(stdout);
 }
 
 static void
