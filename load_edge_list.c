@@ -54,13 +54,10 @@ dump_edge_list()
 void
 parse_edge_list_file_header(FILE* fp, edge_list_file_header *header)
 {
-    // Read the first line of the file
-    char * line = NULL;
-    size_t line_len = 0;
-    size_t rc = getline(&line, &line_len, fp);
-    if (!rc) return;
-    line_len = strlen(line);
-
+    // Get the first line of text from the file
+    char line[256];
+    fgets(line, 256, fp);
+    size_t line_len = strlen(line);
     // Strip endline character
     if (line[line_len-1] != '\n') {
         LOG("Invalid edge list file header\n");
@@ -73,7 +70,7 @@ parse_edge_list_file_header(FILE* fp, edge_list_file_header *header)
     const int max_argc = 32;
     char * argv[max_argc];
     // Leave empty slot for expected program name
-    argv[0] = "dummy";
+    argv[0] = "edge list header";
     int argc = 1;
     char * token = strtok(line, " ");
     while (token && argc < max_argc) {
@@ -118,8 +115,6 @@ parse_edge_list_file_header(FILE* fp, edge_list_file_header *header)
             header->format = optarg;
         }
     }
-
-    free(line);
     // It's up to the caller to validate and interpret the arguments
 }
 
