@@ -641,9 +641,9 @@ cursor_next(cursor * c)
                 c->e = NULL;
                 return;
             }
-            c->eb = mw_get_nth(c->eb, c->nlet);
-            c->e = c->eb->edges;
-            c->end = c->e + c->eb->num_edges;
+            edge_block * eb = mw_get_nth(c->eb, c->nlet);
+            c->e = eb->edges;
+            c->end = c->e + eb->num_edges;
         }
     }
 }
