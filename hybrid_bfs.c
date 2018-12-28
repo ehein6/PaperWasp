@@ -557,9 +557,10 @@ hybrid_bfs_run (long source, long alpha, long beta)
             // Do bottom-up steps for a while
             do {
                 old_awake_count = awake_count;
+                // hooks_set_attr_i64("awake_count", awake_count);
                 // hooks_region_begin("bottom_up_step");
                 awake_count = bottom_up_step();
-                bitmap_swap(&HYBRID_BFS.frontier, &HYBRID_BFS.next_frontier);
+                bitmap_replicated_swap(&HYBRID_BFS.frontier, &HYBRID_BFS.next_frontier);
                 // hooks_region_end();
             } while (awake_count >= old_awake_count ||
                     (awake_count > G.num_vertices / beta));
@@ -570,6 +571,7 @@ hybrid_bfs_run (long source, long alpha, long beta)
             // hooks_region_end();
             scout_count = 1;
         } else {
+            // hooks_set_attr_i64("queue_size", sliding_queue_combined_size(&HYBRID_BFS.queue));
             // hooks_region_begin("top_down_step");
             edges_to_check -= scout_count;
             if (HYBRID_BFS.use_remote_writes) {
@@ -581,6 +583,8 @@ hybrid_bfs_run (long source, long alpha, long beta)
             sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
             // hooks_region_end();
         }
+
+        // dump_queue_stats();
     }
 }
 
