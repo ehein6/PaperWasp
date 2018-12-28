@@ -27,12 +27,10 @@ typedef struct graph {
     // Distributed vertex array
     // number of neighbors for this vertex (on all nodelets)
     long * vertex_out_degree;
-    long * vertex_in_degree;
 
     // Pointer to local edge array (light vertices only)
     // OR replicated edge block pointer (heavy vertices only)
     neighbors * vertex_out_neighbors;
-    neighbors * vertex_in_neighbors;
 
     // Total number of edges stored on each nodelet
     long num_local_edges;
@@ -52,10 +50,4 @@ is_heavy_out(long vertex_id)
 {
     // TODO it would be great if this were a local query, maybe a replicated bitmap?
     return G.vertex_out_degree[vertex_id] >= G.heavy_threshold;
-}
-
-static inline bool
-is_heavy_in(long vertex_id)
-{
-    return G.vertex_in_degree[vertex_id] >= G.heavy_threshold;
 }

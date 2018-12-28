@@ -469,7 +469,7 @@ search_for_parent_in_remote_ebs(long v, long * awake_count)
 {
     // Heavy vertex, spawn a thread for each remote edge block
     long num_found = 0;
-    edge_block * eb = G.vertex_in_neighbors[v].repl_edge_block;
+    edge_block * eb = G.vertex_out_neighbors[v].repl_edge_block;
     for (long i = 0; i < NODELETS(); ++i) {
         edge_block * remote_eb = mw_get_nth(eb, i);
         cilk_spawn_at(remote_eb) search_for_parent_in_eb(v, remote_eb, &num_found);
@@ -491,12 +491,12 @@ search_for_parent_worker(long * array, long begin, long end, va_list args)
     for (long v = begin; v < end; v += NODELETS()) {
         if (HYBRID_BFS.parent[v] < 0) {
             // How big is this vertex?
-            if (is_heavy_in(v)) {
+            if (is_heavy_out(v)) {
                 // Heavy vertex, spawn a thread for each remote edge block
                 cilk_spawn search_for_parent_in_remote_ebs(v, &local_awake_count);
             } else {
-                long * edges_begin = G.vertex_in_neighbors[v].local_edges;
-                long * edges_end = edges_begin + G.vertex_in_degree[v];
+                long * edges_begin = G.vertex_out_neighbors[v].local_edges;
+                long * edges_end = edges_begin + G.vertex_out_degree[v];
                 search_for_parent_parallel(v, edges_begin, edges_end, &local_awake_count);
             }
         }
@@ -512,7 +512,7 @@ bottom_up_step()
     long awake_count = 0;
     // TODO we can do the clear in parallel with other stuff
     bitmap_replicated_clear(&HYBRID_BFS.next_frontier);
-    emu_1d_array_apply((long*)&G.vertex_in_degree, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 64),
+    emu_1d_array_apply(HYBRID_BFS.parent, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 64),
         search_for_parent_worker, &awake_count
     );
     // TODO we can start the sync early at each nodelet once all local vertices are done
@@ -603,21 +603,6 @@ cursor_init_out(cursor * c, long src)
     }
 }
 
-void
-cursor_init_in(cursor * c, long dst)
-{
-    if (is_heavy_in(dst)) {
-        c->nlet = 0;
-        c->eb = mw_get_nth(G.vertex_in_neighbors[dst].repl_edge_block, 0);
-        c->e = c->eb->edges;
-        c->end = c->e + c->eb->num_edges;
-    } else {
-        c->eb = NULL;
-        c->e = G.vertex_in_neighbors[dst].local_edges;
-        c->end = c->e + G.vertex_in_degree[dst];
-    }
-}
-
 bool
 cursor_valid(cursor * c)
 {
@@ -703,7 +688,7 @@ hybrid_bfs_check(long source)
             // Verify that this vertex is connected to its parent
             bool parent_found = false;
             // For all in-edges...
-            for (cursor_init_in(&c, u); cursor_valid(&c); cursor_next(&c)) {
+            for (cursor_init_out(&c, u); cursor_valid(&c); cursor_next(&c)) {
                 long v = *c.e;
                 // If v is the parent of u, their depths should differ by 1
                 if (v == parent[u]) {
