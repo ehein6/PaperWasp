@@ -9,6 +9,8 @@
 #define LCG_MUL64 6364136223846793005ULL
 #define LCG_ADD64 1
 
+unsigned long lcg_state = 0;
+
 void
 lcg_init(unsigned long * x, unsigned long step)
 {
@@ -37,10 +39,11 @@ lcg_rand(unsigned long * x) {
 const struct option long_options[] = {
     {"graph_filename"   ,  required_argument},
     {"heavy_threshold"  , required_argument},
-    {"num_samples"      , required_argument},
+    {"num_trials"       , required_argument},
+    {"source_vertex"    , required_argument},
     {"algorithm"        , required_argument},
     {"alpha"            , required_argument},
-    {"beta"            , required_argument},
+    {"beta"             , required_argument},
     {"help"             , no_argument},
     {NULL}
 };
@@ -51,7 +54,8 @@ print_help(const char* argv0)
     LOG( "Usage: %s [OPTIONS]\n", argv0);
     LOG("\t--graph_filename     Path to graph file to load\n");
     LOG("\t--heavy_threshold    Vertices with this many neighbors will be spread across nodelets\n");
-    LOG("\t--num_samples        Run BFS against this many random vertices\n");
+    LOG("\t--num_trials         Run BFS this many times.\n");
+    LOG("\t--source_vertex      Use this as the source vertex. If unspecified, pick random vertices.\n");
     LOG("\t--algorithm          Select BFS implementation to run\n");
     LOG("\t--alpha              Alpha parameter for direction-optimizing BFS\n");
     LOG("\t--beta               Beta parameter for direction-optimizing BFS\n");
@@ -61,7 +65,8 @@ print_help(const char* argv0)
 typedef struct bfs_args {
     const char* graph_filename;
     long heavy_threshold;
-    long num_samples;
+    long num_trials;
+    long source_vertex;
     const char* algorithm;
     long alpha;
     long beta;
@@ -73,7 +78,8 @@ parse_args(int argc, char *argv[])
     bfs_args args;
     args.graph_filename = NULL;
     args.heavy_threshold = LONG_MAX;
-    args.num_samples = 1;
+    args.num_trials = 1;
+    args.source_vertex = -1;
     args.algorithm = "remote_writes";
     args.alpha = 15;
     args.beta = 18;
@@ -96,8 +102,10 @@ parse_args(int argc, char *argv[])
             args.graph_filename = optarg;
         } else if (!strcmp(option_name, "heavy_threshold")) {
             args.heavy_threshold = atol(optarg);
-        } else if (!strcmp(option_name, "num_samples")) {
-            args.num_samples = atol(optarg);
+        } else if (!strcmp(option_name, "num_trials")) {
+            args.num_trials = atol(optarg);
+        } else if (!strcmp(option_name, "source_vertex")) {
+            args.source_vertex = atol(optarg);
         } else if (!strcmp(option_name, "algorithm")) {
             args.algorithm = optarg;
         } else if (!strcmp(option_name, "alpha")) {
@@ -111,10 +119,20 @@ parse_args(int argc, char *argv[])
     }
     if (args.graph_filename == NULL) { LOG( "Missing graph filename\n"); exit(1); }
     if (args.heavy_threshold <= 0) { LOG( "heavy_threshold must be > 0\n"); exit(1); }
-    if (args.num_samples <= 0) { LOG( "num_samples must be > 0\n"); exit(1); }
+    if (args.num_trials <= 0) { LOG( "num_trials must be > 0\n"); exit(1); }
     if (args.alpha <= 0) { LOG( "alpha must be > 0\n"); exit(1); }
     if (args.beta <= 0) { LOG( "beta must be > 0\n"); exit(1); }
     return args;
+}
+
+long
+pick_random_vertex()
+{
+    long source;
+    do {
+        source = lcg_rand(&lcg_state) % G.num_vertices;
+    } while (G.vertex_out_degree[source] == 0);
+    return source;
 }
 
 int main(int argc, char ** argv)
@@ -135,6 +153,10 @@ int main(int argc, char ** argv)
     construct_graph_from_edge_list(args.heavy_threshold);
     print_graph_distribution();
 
+    if (args.source_vertex >= G.num_vertices) {
+        LOG("Source vertex %li out of range.\n", args.source_vertex);
+    }
+
     // Initialize the algorithm
     LOG("Initializing BFS data structures...\n");
     hooks_set_attr_str("algorithm", args.algorithm);
@@ -150,17 +172,19 @@ int main(int argc, char ** argv)
     hybrid_bfs_init(use_remote_writes);
 
     // Initialize RNG with deterministic seed
-    unsigned long lcg_state = 0;
     lcg_init(&lcg_state, 0);
 
     long source;
-    for (long s = 0; s < args.num_samples; ++s) {
+    for (long s = 0; s < args.num_trials; ++s) {
         // Randomly pick a source vertex with positive degree
-        do {
-            source = lcg_rand(&lcg_state) % G.num_vertices;
-        } while (G.vertex_out_degree[source] == 0);
+        if (args.source_vertex >= 0) {
+            source = args.source_vertex;
+        } else {
+            source = pick_random_vertex();
+        }
+
         LOG("Doing breadth-first search from vertex %li (sample %li of %li)\n",
-            source, s + 1, args.num_samples);
+            source, s + 1, args.num_trials);
         // Run the BFS
         hooks_set_attr_i64("source_vertex", source);
         hooks_region_begin("bfs");
@@ -172,7 +196,7 @@ int main(int argc, char ** argv)
             LOG("PASS\n");
         } else {
             LOG("FAIL\n");
-            // hybrid_bfs_print_tree();
+            hybrid_bfs_print_tree();
         }
         // Output results
         long num_edges_traversed = hybrid_bfs_count_num_traversed_edges();
