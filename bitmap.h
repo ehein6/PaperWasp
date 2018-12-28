@@ -55,7 +55,7 @@ bitmap_sync(bitmap * self)
         unsigned long * local_word = &self->words[i];
         if (*local_word != 0) {
             // Send a remote to combine with the copy on each nodelet
-            for (long nlet = 0; i < NODELETS(); ++i) {
+            for (long nlet = 0; nlet < NODELETS(); ++nlet) {
                 long * remote_word = mw_get_nth(local_word, nlet); // TODO inline me
                 REMOTE_OR(remote_word, *local_word);
             }
@@ -129,4 +129,15 @@ bitmap_swap(bitmap * a, bitmap * b)
     long num_words = a->num_words;
     a->num_words = b->num_words;
     b->num_words = num_words;
+}
+
+// Swap two bitmaps
+static inline void
+bitmap_replicated_swap(bitmap * a, bitmap * b)
+{
+    for (long nlet = 0; nlet < NODELETS(); ++nlet) {
+        bitmap * a_n = mw_get_nth(a, nlet);
+        bitmap * b_n = mw_get_nth(b, nlet);
+        bitmap_swap(a_n, b_n);
+    }
 }
