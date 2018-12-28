@@ -746,6 +746,7 @@ hybrid_bfs_check(long source)
         }
     }
 
+    sliding_queue_deinit(&q);
     mw_free(depth);
     return correct;
 }

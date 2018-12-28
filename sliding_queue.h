@@ -50,6 +50,13 @@ sliding_queue_replicated_init(sliding_queue * self, long size)
 }
 
 static inline void
+sliding_queue_deinit(sliding_queue * self)
+{
+    mw_localfree(self->buffer);
+    mw_localfree(self->heads);
+}
+
+static inline void
 sliding_queue_replicated_deinit(sliding_queue * self)
 {
     mw_free(self->buffer);
