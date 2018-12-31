@@ -238,24 +238,30 @@ out_edge_exists(long src, long dst)
 
 void check_graph_worker(long * array, long begin, long end, va_list args)
 {
+    long * ok = va_arg(args, long*);
     for (long i = begin; i < end; i += NODELETS()) {
         long src = EL.src[i];
         long dst = EL.dst[i];
         if (!out_edge_exists(src, dst)) {
             LOG("Missing out edge for %li->%li\n", src, dst);
+            *ok = 0;
         }
         if (!out_edge_exists(dst, src)) {
             LOG("Missing out edge for %li->%li\n", src, dst);
+            *ok = 0;
         }
     }
 }
 
 // Compare the edge list with the constructed graph
 // VERY SLOW, use only for testing
-void check_graph() {
+bool
+check_graph() {
+    long ok = 1;
     emu_1d_array_apply(EL.src, G.num_edges, GLOBAL_GRAIN(G.num_edges),
-        check_graph_worker
+        check_graph_worker, &ok
     );
+    return (bool)ok;
 }
 
 void dump_graph()

@@ -2,6 +2,9 @@
 
 #include "graph.h"
 
+bool
+check_graph();
+
 void
 construct_graph_from_edge_list();
 

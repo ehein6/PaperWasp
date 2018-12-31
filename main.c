@@ -44,6 +44,8 @@ const struct option long_options[] = {
     {"algorithm"        , required_argument},
     {"alpha"            , required_argument},
     {"beta"             , required_argument},
+    {"check_graph"      , no_argument},
+    {"check_results"    , no_argument},
     {"help"             , no_argument},
     {NULL}
 };
@@ -59,6 +61,8 @@ print_help(const char* argv0)
     LOG("\t--algorithm          Select BFS implementation to run\n");
     LOG("\t--alpha              Alpha parameter for direction-optimizing BFS\n");
     LOG("\t--beta               Beta parameter for direction-optimizing BFS\n");
+    LOG("\t--check_graph        Validate the constructed graph against the edge list (slow)\n");
+    LOG("\t--check_results      Validate the BFS results (slow)\n");
     LOG("\t--help               Print command line help\n");
 }
 
@@ -70,6 +74,8 @@ typedef struct bfs_args {
     const char* algorithm;
     long alpha;
     long beta;
+    bool check_graph;
+    bool check_results;
 } bfs_args;
 
 struct bfs_args
@@ -83,6 +89,8 @@ parse_args(int argc, char *argv[])
     args.algorithm = "remote_writes";
     args.alpha = 15;
     args.beta = 18;
+    args.check_graph = false;
+    args.check_results = false;
 
     int option_index;
     while (true)
@@ -112,6 +120,10 @@ parse_args(int argc, char *argv[])
             args.alpha = atol(optarg);
         } else if (!strcmp(option_name, "beta")) {
             args.beta = atol(optarg);
+        } else if (!strcmp(option_name, "check_graph")) {
+            args.check_graph = true;
+        } else if (!strcmp(option_name, "check_results")) {
+            args.check_results = true;
         } else if (!strcmp(option_name, "help")) {
             print_help(argv[0]);
             exit(1);
@@ -152,6 +164,14 @@ int main(int argc, char ** argv)
     LOG("Constructing graph...\n");
     construct_graph_from_edge_list(args.heavy_threshold);
     print_graph_distribution();
+    if (args.check_graph) {
+        LOG("Checking graph...");
+        if (check_graph()) {
+            LOG("PASS\n");
+        } else {
+            LOG("FAIL\n");
+        };
+    }
 
     if (args.source_vertex >= G.num_vertices) {
         LOG("Source vertex %li out of range.\n", args.source_vertex);
@@ -190,13 +210,14 @@ int main(int argc, char ** argv)
         hooks_region_begin("bfs");
         hybrid_bfs_run(source, args.alpha, args.beta);
         double time_ms = hooks_region_end();
-
-        LOG("Checking results...\n");
-        if (hybrid_bfs_check(source)) {
-            LOG("PASS\n");
-        } else {
-            LOG("FAIL\n");
-            hybrid_bfs_print_tree();
+        if (args.check_results) {
+            LOG("Checking results...\n");
+            if (hybrid_bfs_check(source)) {
+                LOG("PASS\n");
+            } else {
+                LOG("FAIL\n");
+                hybrid_bfs_print_tree();
+            }
         }
         // Output results
         long num_edges_traversed = hybrid_bfs_count_num_traversed_edges();
