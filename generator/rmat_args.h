@@ -1,6 +1,7 @@
 #pragma once
 #include <cinttypes>
 #include <sstream>
+#include <regex>
 
 struct rmat_args
 {
@@ -23,20 +24,32 @@ struct rmat_args
     }
 
     static rmat_args
-    from_string(std::string str)
+    from_string(const std::string& str)
     {
-        std::istringstream ss(str);
-
         rmat_args args;
-        std::string token;
-        // Format is a-b-c-d-ne-nv.rmat
-        // Example: 0.55-0.15-0.15-0.15-500M-1M.rmat
-        std::getline(ss, token, '-'); args.a = std::stod(token);
-        std::getline(ss, token, '-'); args.b = std::stod(token);
-        std::getline(ss, token, '-'); args.c = std::stod(token);
-        std::getline(ss, token, '-'); args.d = std::stod(token);
-        std::getline(ss, token, '-'); args.num_edges = parse_int_with_suffix(token);
-        std::getline(ss, token, '.'); args.num_vertices = parse_int_with_suffix(token);
+        std::smatch m;
+
+        std::regex r1(R"((\d+[.]\d+)-(\d+[.]\d+)-(\d+[.]\d+)-(\d+[.]\d+)-(\d+[KMGT]?)-(\d+[KMGT]?)\.rmat)");
+        std::regex r2(R"(graph500-scale(\d+))");
+
+        if (std::regex_match(str, m, r1)) {
+            args.a = std::stod(m[1]);
+            args.b = std::stod(m[2]);
+            args.c = std::stod(m[3]);
+            args.d = std::stod(m[4]);
+            args.num_edges = parse_int_with_suffix(m[5]);
+            args.num_vertices = parse_int_with_suffix(m[6]);
+        } else if (std::regex_match(str, m, r2)) {
+            args.a = 0.57;
+            args.b = 0.19;
+            args.c = 0.19;
+            args.d = 0.05;
+            auto scale = parse_int_with_suffix(m[1]);
+            args.num_vertices = (1 << scale);
+            args.num_edges = 16 * args.num_vertices;
+        } else {
+            // Raise an error here?
+        }
 
         return args;
     }
