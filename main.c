@@ -181,15 +181,24 @@ int main(int argc, char ** argv)
     LOG("Initializing BFS data structures...\n");
     hooks_set_attr_str("algorithm", args.algorithm);
     bool use_remote_writes;
+    bool enable_hybrid;
     if (!strcmp(args.algorithm, "remote_writes")) {
         use_remote_writes = true;
+        enable_hybrid = false;
     } else if (!strcmp(args.algorithm, "migrating_threads")) {
         use_remote_writes = false;
+        enable_hybrid = false;
+    } else if (!strcmp(args.algorithm, "remote_writes_hybrid")) {
+        use_remote_writes = true;
+        enable_hybrid = true;
+    } else if (!strcmp(args.algorithm, "migrating_threads_hybrid")) {
+        use_remote_writes = false;
+        enable_hybrid = true;
     } else {
         LOG("Algorithm '%s' not implemented!\n", args.algorithm);
         exit(1);
     }
-    hybrid_bfs_init(use_remote_writes);
+    hybrid_bfs_init(use_remote_writes, enable_hybrid);
 
     // Initialize RNG with deterministic seed
     lcg_init(&lcg_state, 0);

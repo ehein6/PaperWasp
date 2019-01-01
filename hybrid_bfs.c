@@ -93,9 +93,10 @@ hybrid_bfs_data_clear()
 
 
 void
-hybrid_bfs_init(long use_remote_writes)
+hybrid_bfs_init(long use_remote_writes, long enable_hybrid)
 {
     mw_replicated_init(&HYBRID_BFS.use_remote_writes, use_remote_writes);
+    mw_replicated_init(&HYBRID_BFS.enable_hybrid, enable_hybrid);
     init_striped_array(&HYBRID_BFS.parent, G.num_vertices);
     init_striped_array(&HYBRID_BFS.new_parent, G.num_vertices);
     sliding_queue_replicated_init(&HYBRID_BFS.queue, G.num_vertices);
@@ -546,7 +547,7 @@ hybrid_bfs_run (long source, long alpha, long beta)
     // While there are vertices in the queue...
     while (!sliding_queue_all_empty(&HYBRID_BFS.queue)) {
 
-        if (scout_count > edges_to_check / alpha) {
+        if (HYBRID_BFS.enable_hybrid && (scout_count > edges_to_check / alpha)) {
             long awake_count, old_awake_count;
             // Convert sliding queue to bitmap
             // hooks_region_begin("queue_to_bitmap");
