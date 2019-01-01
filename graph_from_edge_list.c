@@ -420,7 +420,55 @@ void print_graph_distribution()
         G.num_vertices,
         100.0 * ((double)num_heavy_vertices / (double)G.num_vertices)
     );
+
+    // Compute percentage of edges on each nodelet
+    double percent_edges[NODELETS()];
     for (long nlet = 0; nlet < NODELETS(); ++nlet) {
-        LOG("nlet[%li]: %20li edges\n", nlet, *(long*)mw_get_nth(&G.num_local_edges, nlet));
+        long num_local_edges = *(long*)mw_get_nth(&G.num_local_edges, nlet);
+        percent_edges[nlet] = (double)num_local_edges / (G.num_edges * 2);
     }
+
+    // Compute the max (to scale the y-axis)
+    double max_percent = 0;
+    for (long nlet = 0; nlet < NODELETS(); ++nlet) {
+        if (percent_edges[nlet] > max_percent) {
+            max_percent = percent_edges[nlet];
+        }
+    }
+
+    // Compute bar heights
+    long histogram[NODELETS()];
+    const long bar_height = 10;
+    for (long nlet = 0; nlet < NODELETS(); ++nlet) {
+        histogram[nlet] = bar_height * (percent_edges[nlet] / max_percent);
+    }
+
+    // Draw a histogram representing edge distribution
+    printf("Edge distribution per nodelet: \n");
+    for (long row = bar_height; row > 0; --row) {
+        // Y-axis label
+        printf("%3.1f%% ", 100 * max_percent * row / bar_height);
+        // Draw bar segments in this row
+        for (long nlet = 0; nlet < NODELETS(); ++nlet) {
+            if (histogram[nlet] >= row) {
+                printf("█");
+            } else {
+                printf(" ");
+            }
+        }
+        printf("\n");
+    }
+    // Bottom two rows: nodelet number, stacked vertically
+    printf("     "); // Spacer
+    for (long nlet = 0; nlet < NODELETS(); ++nlet) {
+        if (nlet > 10) { printf("%li", nlet / 10); }
+        else           { printf(" "); }
+    }
+    printf("\n");
+    printf("     "); // Spacer
+    for (long nlet = 0; nlet < NODELETS(); ++nlet) {
+        printf("%li", nlet % 10);
+    }
+    printf("\n");
+    fflush(stdout);
 }
