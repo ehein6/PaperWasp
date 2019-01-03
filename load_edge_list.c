@@ -4,6 +4,35 @@
 #include <stdio.h>
 #include <string.h>
 
+// TODO add these to emu_c_utils
+#ifndef __le64__
+static inline FILE *
+mw_fopen(const char *path, const char *mode, void *local_ptr)
+{
+    (void)local_ptr;
+    return fopen(path, mode);
+}
+static inline int
+mw_fclose(FILE * fp)
+{
+    return fclose(fp);
+}
+static inline size_t
+mw_fread(void *ptr, size_t size, size_t nmemb, FILE *fp)
+{
+    return fread(ptr, size, nmemb, fp);
+}
+static inline size_t
+mw_fwrite(void *ptr, size_t size, size_t nmemb, FILE *fp)
+{
+    return fwrite(ptr, size, nmemb, fp);
+}
+
+#else
+#include <memoryweb/io.h>
+#endif
+
+
 // Single global instance of the distributed edge list
 replicated dist_edge_list EL;
 
@@ -117,7 +146,7 @@ parse_edge_list_file_header(FILE* fp, edge_list_file_header *header)
         } else if (!strcmp(option_name, "is_deduped")) {
             header->is_deduped = true;
         } else if (!strcmp(option_name, "format")) {
-            header->format = optarg;
+            header->format = strdup(optarg);
         }
     }
     // It's up to the caller to validate and interpret the arguments
@@ -219,37 +248,6 @@ void load_edge_list(const char* filename)
     hooks_region_end();
 }
 
-// void
-// load_edge_list_distributed(const char* filename)
-// {
-//     LOG("Not implemented yet!");
-//     exit(1);
-
-// TODO add these to emu_c_utils
-#ifndef __le64__
-static inline FILE *
-mw_fopen(const char *path, const char *mode, void *local_ptr)
-{
-    (void)local_ptr;
-    return fopen(path, mode);
-}
-static inline int
-mw_fclose(FILE * fp)
-{
-    return fclose(fp);
-}
-static inline size_t
-mw_fread(void *ptr, size_t size, size_t nmemb, FILE *fp)
-{
-    return (int)fread(ptr, size, nmemb, fp);
-}
-static inline size_t
-mw_fwrite(void *ptr, size_t size, size_t nmemb, FILE *fp)
-{
-    return (int)fwrite(ptr, size, nmemb, fp);
-}
-#endif
-
 void
 buffered_edge_list_reader(long * array, long begin, long end, va_list args)
 {
@@ -274,16 +272,19 @@ buffered_edge_list_reader(long * array, long begin, long end, va_list args)
         exit(1);
     }
 
+    // The range (begin, end] is striped, with a stride of NODELETS
+    // Every time we read an edge, we'll decrement this to keep track
+    size_t num_to_read = (end - begin) / NODELETS();
     size_t buffer_size = 32768;
     edge buffer[buffer_size];
-    for (size_t pos = begin; pos < end;) {
+    for (size_t pos = begin; num_to_read > 0;) {
 
         // Fill the buffer with edges from the file
-        size_t n = pos + buffer_size;
-        if (n > end) { n = end - pos; }
-        size_t rc = mw_fread(buffer, sizeof(edge), n, fp);
-        if (rc != n) {
-            LOG("Error during graph loading");
+        size_t n = buffer_size < num_to_read ? buffer_size : num_to_read;
+        size_t rc = mw_fread(buffer, 1, sizeof(edge) * n, fp);
+        if (rc != n * sizeof(edge)) {
+            LOG("Error during graph loading, expected %li but only read %li\n",
+                n, rc);
             exit(1);
         }
 
@@ -293,6 +294,7 @@ buffered_edge_list_reader(long * array, long begin, long end, va_list args)
             EL.dst[pos] = buffer[i].dst;
             // Next edge on this nodelet is at NODELETS stride away
             pos += NODELETS();
+            num_to_read -= 1;
         }
     }
     // Clean up

@@ -447,7 +447,7 @@ void print_graph_distribution()
     printf("Edge distribution per nodelet: \n");
     for (long row = bar_height; row > 0; --row) {
         // Y-axis label
-        printf("%3.1f%% ", 100 * max_percent * row / bar_height);
+        printf("%5.1f%% ", 100 * max_percent * row / bar_height);
         // Draw bar segments in this row
         for (long nlet = 0; nlet < NODELETS(); ++nlet) {
             if (histogram[nlet] >= row) {
