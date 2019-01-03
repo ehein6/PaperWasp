@@ -157,7 +157,12 @@ load_edge_list_local(const char* path, edge_list * el)
     LOG("Loading %li edges from %s...\n", header.num_edges, path);
     size_t rc = fread(&el->edges[0], sizeof(edge), header.num_edges, fp);
     if (rc != header.num_edges) {
-        LOG("Failed to load edge list from %s\n", path);
+        LOG("Failed to load edge list from %s ", path);
+        if (feof(fp)) {
+            LOG("unexpected EOF\n");
+        } else if (ferror(fp)) {
+            perror("fread returned error\n");
+        }
         exit(1);
     }
     fclose(fp);
