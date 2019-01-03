@@ -45,14 +45,14 @@ bitmap_replicated_clear(bitmap * self)
     }
 }
 
-// Broadcast to all other replicated copies to synchronize
 static inline void
-bitmap_sync(bitmap * self)
+bitmap_sync_worker(long begin, long end, va_list args)
 {
+    bitmap * self = va_arg(args, bitmap*);
+    unsigned long * first_word = &self->words[begin];
+    unsigned long * last_word = &self->words[end];
     // For each non-zero word in the bitmap...
-    // TODO parallelize with emu_local_for
-    for (long i = 0; i < self->num_words; ++i) {
-        unsigned long * local_word = &self->words[i];
+    for (unsigned long *local_word = first_word; local_word < last_word; ++local_word) {
         if (*local_word != 0) {
             // Send a remote to combine with the copy on each nodelet
             for (long nlet = 0; nlet < NODELETS(); ++nlet) {
@@ -61,6 +61,15 @@ bitmap_sync(bitmap * self)
             }
         }
     }
+}
+
+// Broadcast to all other replicated copies to synchronize
+static inline void
+bitmap_sync(bitmap * self)
+{
+    emu_local_for(0, self->num_words, LOCAL_GRAIN_MIN(self->num_words, 128),
+        bitmap_sync_worker, self
+    );
 }
 
 // Synchronize all replicated copies by combining information
