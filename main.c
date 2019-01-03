@@ -160,7 +160,7 @@ int main(int argc, char ** argv)
     hooks_set_attr_i64("heavy_threshold", args.heavy_threshold);
 
     // Load the graph
-    load_edge_list(args.graph_filename);
+    load_edge_list_distributed(args.graph_filename);
     LOG("Constructing graph...\n");
     construct_graph_from_edge_list(args.heavy_threshold);
     print_graph_distribution();

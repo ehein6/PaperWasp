@@ -39,6 +39,10 @@ typedef struct edge_list_file_header {
     //   32  : binary, 32 bits per field
     //   64  : binary, 64 bits per field
     char* format;
+    // Number of bytes in the file header.
+    // Includes the newline character
+    // There is no null terminator
+    size_t header_length;
 } edge_list_file_header;
 
 void
@@ -58,6 +62,7 @@ parse_edge_list_file_header(FILE* fp, edge_list_file_header *header)
     char line[256];
     fgets(line, 256, fp);
     size_t line_len = strlen(line);
+    header->header_length = line_len;
     // Strip endline character
     if (line[line_len-1] != '\n') {
         LOG("Invalid edge list file header\n");
@@ -220,9 +225,115 @@ void load_edge_list(const char* filename)
 //     LOG("Not implemented yet!");
 //     exit(1);
 
-//     init_dist_edge_list(num_edges);
-//     // FIXME
-// }
+// TODO add these to emu_c_utils
+#ifndef __le64__
+static inline FILE *
+mw_fopen(const char *path, const char *mode, void *local_ptr)
+{
+    (void)local_ptr;
+    return fopen(path, mode);
+}
+static inline int
+mw_fclose(FILE * fp)
+{
+    return fclose(fp);
+}
+static inline size_t
+mw_fread(void *ptr, size_t size, size_t nmemb, FILE *fp)
+{
+    return (int)fread(ptr, size, nmemb, fp);
+}
+static inline size_t
+mw_fwrite(void *ptr, size_t size, size_t nmemb, FILE *fp)
+{
+    return (int)fwrite(ptr, size, nmemb, fp);
+}
+#endif
+
+void
+buffered_edge_list_reader(long * array, long begin, long end, va_list args)
+{
+    /*
+     * We can't read directly into the distributed edge list.
+     * Need to convert to in-memory struct-of-arrays from the file's array-of-structs.
+     * So we read a large chunk at a time (minimize # of calls to fread).
+     * And then unpack it into the local portion of the distributed EL
+     */
+    // Open the file
+    char * filename = va_arg(args, char*);
+    size_t file_header_len = va_arg(args, size_t);
+    FILE * fp = mw_fopen(filename, "rb", &EL.src[begin]);
+    if (fp == NULL) {
+        LOG("Error opening %s on nodelet %li\n", filename, NODE_ID());
+        exit(1);
+    }
+    // Skip past the header and jump to this threads portion of the edge list
+    int rc = fseek(fp, file_header_len + sizeof(edge) * begin, SEEK_SET);
+    if (rc) {
+        LOG("Error loading %li-th edge from nodelet %li\n", begin, NODE_ID());
+        exit(1);
+    }
+
+    size_t buffer_size = 32768;
+    edge buffer[buffer_size];
+    for (size_t pos = begin; pos < end;) {
+
+        // Fill the buffer with edges from the file
+        size_t n = pos + buffer_size;
+        if (n > end) { n = end - pos; }
+        size_t rc = mw_fread(buffer, sizeof(edge), n, fp);
+        if (rc != n) {
+            LOG("Error during graph loading");
+            exit(1);
+        }
+
+        // Copy into the edge list
+        for (size_t i = 0; i < n; ++i) {
+            EL.src[pos] = buffer[i].src;
+            EL.dst[pos] = buffer[i].dst;
+            // Next edge on this nodelet is at NODELETS stride away
+            pos += NODELETS();
+        }
+    }
+    // Clean up
+    mw_fclose(fp);
+}
+
+void
+load_edge_list_distributed(const char* filename)
+{
+    // Open the file just to check the header
+    LOG("Opening %s...\n", filename);
+    FILE* fp = fopen(filename, "rb");
+    if (fp == NULL) {
+        LOG("Unable to open %s\n", filename);
+        exit(1);
+    }
+    edge_list_file_header header;
+    parse_edge_list_file_header(fp, &header);
+    fclose(fp);
+
+    if (header.num_vertices <= 0 || header.num_edges <= 0) {
+        LOG("Invalid graph size in header\n");
+        exit(1);
+    }
+    // TODO add support for other formats
+    if (!header.format || !!strcmp(header.format, "el64")) {
+        LOG("Unsuppported edge list format %s\n", header.format);
+        exit(1);
+    }
+    // Future implementations may be able to handle duplicates
+    if (!header.is_deduped) {
+        LOG("Edge list must be deduped.");
+        exit(1);
+    }
+
+    init_dist_edge_list(header.num_vertices, header.num_edges);
+
+    emu_1d_array_apply(EL.src, EL.num_edges, GLOBAL_GRAIN_MIN(EL.num_edges, 32768),
+        buffered_edge_list_reader, filename, header.header_length
+    );
+}
 
 
 
