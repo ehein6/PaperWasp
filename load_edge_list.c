@@ -270,8 +270,7 @@ buffered_edge_list_reader(long * array, long begin, long end, va_list args)
     // Open the file
     char * filename = va_arg(args, char*);
     size_t file_header_len = va_arg(args, size_t);
-    // FILE * fp = mw_fopen(filename, "rb", &EL.src[begin]);
-    FILE * fp = fopen(filename, "rb");
+    FILE * fp = mw_fopen(filename, "rb", &EL.src[begin]);
     if (fp == NULL) {
         MIGRATE(&EL.src[begin]);
         long nlet = NODE_ID();
@@ -298,7 +297,7 @@ buffered_edge_list_reader(long * array, long begin, long end, va_list args)
 
         // Fill the buffer with edges from the file
         size_t n = buffer_size < num_to_read ? buffer_size : num_to_read;
-        size_t rc = fread(buffer, 1, sizeof(edge) * n, fp);
+        size_t rc = mw_fread(buffer, 1, sizeof(edge) * n, fp);
         if (rc != n * sizeof(edge)) {
             LOG("Error during graph loading, expected %li but only read %li\n",
                 n * sizeof(edge), rc);
@@ -315,7 +314,7 @@ buffered_edge_list_reader(long * array, long begin, long end, va_list args)
         }
     }
     // Clean up
-    fclose(fp);
+    mw_fclose(fp);
 }
 
 void
