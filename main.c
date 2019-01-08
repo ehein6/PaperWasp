@@ -37,14 +37,17 @@ lcg_rand(unsigned long * x) {
 }
 
 const struct option long_options[] = {
-    {"graph_filename"   ,  required_argument},
+    {"graph_filename"   , required_argument},
+    {"distributed_load" , no_argument},
     {"heavy_threshold"  , required_argument},
     {"num_trials"       , required_argument},
     {"source_vertex"    , required_argument},
     {"algorithm"        , required_argument},
     {"alpha"            , required_argument},
     {"beta"             , required_argument},
+    {"dump_edge_list"   , no_argument},
     {"check_graph"      , no_argument},
+    {"dump_graph"       , no_argument},
     {"check_results"    , no_argument},
     {"help"             , no_argument},
     {NULL}
@@ -55,26 +58,32 @@ print_help(const char* argv0)
 {
     LOG( "Usage: %s [OPTIONS]\n", argv0);
     LOG("\t--graph_filename     Path to graph file to load\n");
+    LOG("\t--distributed_load   Load the graph from all nodes at once (File must exist on all nodes, use absolute path).\n");
     LOG("\t--heavy_threshold    Vertices with this many neighbors will be spread across nodelets\n");
     LOG("\t--num_trials         Run BFS this many times.\n");
     LOG("\t--source_vertex      Use this as the source vertex. If unspecified, pick random vertices.\n");
     LOG("\t--algorithm          Select BFS implementation to run\n");
     LOG("\t--alpha              Alpha parameter for direction-optimizing BFS\n");
     LOG("\t--beta               Beta parameter for direction-optimizing BFS\n");
+    LOG("\t--dump_edge_list     Print the edge list to stdout after loading (slow)\n");
     LOG("\t--check_graph        Validate the constructed graph against the edge list (slow)\n");
+    LOG("\t--dump_graph         Print the graph to stdout after construction (slow)\n");
     LOG("\t--check_results      Validate the BFS results (slow)\n");
     LOG("\t--help               Print command line help\n");
 }
 
 typedef struct bfs_args {
     const char* graph_filename;
+    bool distributed_load;
     long heavy_threshold;
     long num_trials;
     long source_vertex;
     const char* algorithm;
     long alpha;
     long beta;
+    bool dump_edge_list;
     bool check_graph;
+    bool dump_graph;
     bool check_results;
 } bfs_args;
 
@@ -83,13 +92,16 @@ parse_args(int argc, char *argv[])
 {
     bfs_args args;
     args.graph_filename = NULL;
+    args.distributed_load = false;
     args.heavy_threshold = LONG_MAX;
     args.num_trials = 1;
     args.source_vertex = -1;
     args.algorithm = "remote_writes";
     args.alpha = 15;
     args.beta = 18;
+    args.dump_edge_list = false;
     args.check_graph = false;
+    args.dump_graph = false;
     args.check_results = false;
 
     int option_index;
@@ -108,6 +120,8 @@ parse_args(int argc, char *argv[])
 
         if (!strcmp(option_name, "graph_filename")) {
             args.graph_filename = optarg;
+        } else if (!strcmp(option_name, "distributed_load")) {
+            args.distributed_load = true;
         } else if (!strcmp(option_name, "heavy_threshold")) {
             args.heavy_threshold = atol(optarg);
         } else if (!strcmp(option_name, "num_trials")) {
@@ -120,8 +134,12 @@ parse_args(int argc, char *argv[])
             args.alpha = atol(optarg);
         } else if (!strcmp(option_name, "beta")) {
             args.beta = atol(optarg);
+        } else if (!strcmp(option_name, "dump_edge_list")) {
+            args.dump_edge_list = true;
         } else if (!strcmp(option_name, "check_graph")) {
             args.check_graph = true;
+        } else if (!strcmp(option_name, "dump_graph")) {
+            args.dump_graph = true;
         } else if (!strcmp(option_name, "check_results")) {
             args.check_results = true;
         } else if (!strcmp(option_name, "help")) {
@@ -159,8 +177,18 @@ int main(int argc, char ** argv)
     bfs_args args = parse_args(argc, argv);
     hooks_set_attr_i64("heavy_threshold", args.heavy_threshold);
 
-    // Load the graph
-    load_edge_list_distributed(args.graph_filename);
+    // Load the edge list
+    if (args.distributed_load) {
+        load_edge_list_distributed(args.graph_filename);
+    } else {
+        load_edge_list(args.graph_filename);
+    }
+    if (args.dump_edge_list) {
+        LOG("Dumping edge list...\n");
+        dump_edge_list();
+    }
+
+    // Build the graph
     LOG("Constructing graph...\n");
     construct_graph_from_edge_list(args.heavy_threshold);
     print_graph_distribution();
@@ -172,7 +200,12 @@ int main(int argc, char ** argv)
             LOG("FAIL\n");
         };
     }
+    if (args.dump_graph) {
+        LOG("Dumping graph...\n");
+        dump_graph();
+    }
 
+    // Check for valid source vertex
     if (args.source_vertex >= G.num_vertices) {
         LOG("Source vertex %li out of range.\n", args.source_vertex);
     }
