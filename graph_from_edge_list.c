@@ -31,6 +31,8 @@ calculate_degrees_worker(long * array, long begin, long end, va_list args)
     for (long i = begin; i < end; i += NODELETS()) {
         long src = EL.src[i];
         long dst = EL.dst[i];
+        assert(src >= 0 && src < G.num_vertices);
+        assert(dst >= 0 && dst < G.num_vertices);
         REMOTE_ADD(&G.vertex_out_degree[src], 1);
         REMOTE_ADD(&G.vertex_out_degree[dst], 1);
     }
@@ -459,13 +461,13 @@ void print_graph_distribution()
         printf("\n");
     }
     // Bottom two rows: nodelet number, stacked vertically
-    printf("     "); // Spacer
+    printf("       "); // Spacer
     for (long nlet = 0; nlet < NODELETS(); ++nlet) {
         if (nlet > 10) { printf("%li", nlet / 10); }
         else           { printf(" "); }
     }
     printf("\n");
-    printf("     "); // Spacer
+    printf("       "); // Spacer
     for (long nlet = 0; nlet < NODELETS(); ++nlet) {
         printf("%li", nlet % 10);
     }
