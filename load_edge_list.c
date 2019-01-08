@@ -237,7 +237,7 @@ void load_edge_list(const char* filename)
 {
     edge_list el;
 
-    hooks_region_begin("load_graph");
+    hooks_region_begin("load_edge_list");
     load_edge_list_local(filename, &el);
     hooks_region_end();
 
@@ -246,6 +246,16 @@ void load_edge_list(const char* filename)
     hooks_region_begin("scatter_edge_list");
     scatter_edges(&el);
     hooks_region_end();
+}
+
+size_t
+list_offset_to_file_offset(long pos, long num_edges)
+{
+    // Divide and round up
+    long edges_per_nodelet = (num_edges)/ NODELETS();
+    long edge_offset = edges_per_nodelet * (pos % NODELETS()) + (pos / NODELETS());
+    long file_offset = sizeof(edge) * edge_offset;
+    return file_offset;
 }
 
 void
@@ -260,7 +270,8 @@ buffered_edge_list_reader(long * array, long begin, long end, va_list args)
     // Open the file
     char * filename = va_arg(args, char*);
     size_t file_header_len = va_arg(args, size_t);
-    FILE * fp = mw_fopen(filename, "rb", &EL.src[begin]);
+    // FILE * fp = mw_fopen(filename, "rb", &EL.src[begin]);
+    FILE * fp = fopen(filename, "rb");
     if (fp == NULL) {
         MIGRATE(&EL.src[begin]);
         long nlet = NODE_ID();
@@ -268,7 +279,8 @@ buffered_edge_list_reader(long * array, long begin, long end, va_list args)
         exit(1);
     }
     // Skip past the header and jump to this threads portion of the edge list
-    int rc = fseek(fp, file_header_len + sizeof(edge) * begin, SEEK_SET);
+    size_t offset = file_header_len + list_offset_to_file_offset(begin, EL.num_edges);
+    int rc = fseek(fp, offset, SEEK_SET);
     if (rc) {
         MIGRATE(&EL.src[begin]);
         long nlet = NODE_ID();
@@ -278,17 +290,18 @@ buffered_edge_list_reader(long * array, long begin, long end, va_list args)
 
     // The range (begin, end] is striped, with a stride of NODELETS
     // Every time we read an edge, we'll decrement this to keep track
-    size_t num_to_read = (end - begin) / NODELETS();
+    size_t num_to_read = (end - begin + NODELETS() - 1) / NODELETS();
     size_t buffer_size = 32768;
     edge buffer[buffer_size];
+
     for (size_t pos = begin; num_to_read > 0;) {
 
         // Fill the buffer with edges from the file
         size_t n = buffer_size < num_to_read ? buffer_size : num_to_read;
-        size_t rc = mw_fread(buffer, 1, sizeof(edge) * n, fp);
+        size_t rc = fread(buffer, 1, sizeof(edge) * n, fp);
         if (rc != n * sizeof(edge)) {
             LOG("Error during graph loading, expected %li but only read %li\n",
-                n, rc);
+                n * sizeof(edge), rc);
             exit(1);
         }
 
@@ -302,7 +315,7 @@ buffered_edge_list_reader(long * array, long begin, long end, va_list args)
         }
     }
     // Clean up
-    mw_fclose(fp);
+    fclose(fp);
 }
 
 void
@@ -334,11 +347,14 @@ load_edge_list_distributed(const char* filename)
         exit(1);
     }
 
-    init_dist_edge_list(header.num_vertices, header.num_edges);
 
+    init_dist_edge_list(header.num_vertices, header.num_edges);
+    LOG("Loading %li edges into distributed edge list from all nodes...\n", EL.num_edges);
+    hooks_region_begin("load_edge_list");
     emu_1d_array_apply(EL.src, EL.num_edges, GLOBAL_GRAIN_MIN(EL.num_edges, 32768),
         buffered_edge_list_reader, filename, header.header_length
     );
+    hooks_region_end();
 }
 
 
