@@ -258,6 +258,8 @@ list_offset_to_file_offset(long pos, long num_edges)
     return file_offset;
 }
 
+#define EDGE_BUFFER_SIZE ((16 * 1024 * 1024) / sizeof(edge))
+
 void
 buffered_edge_list_reader(long * array, long begin, long end, va_list args)
 {
@@ -290,7 +292,7 @@ buffered_edge_list_reader(long * array, long begin, long end, va_list args)
     // The range (begin, end] is striped, with a stride of NODELETS
     // Every time we read an edge, we'll decrement this to keep track
     size_t num_to_read = (end - begin + NODELETS() - 1) / NODELETS();
-    size_t buffer_size = 32768;
+    size_t buffer_size = EDGE_BUFFER_SIZE;
     edge buffer[buffer_size];
 
     for (size_t pos = begin; num_to_read > 0;) {
@@ -350,7 +352,9 @@ load_edge_list_distributed(const char* filename)
     init_dist_edge_list(header.num_vertices, header.num_edges);
     LOG("Loading %li edges into distributed edge list from all nodes...\n", EL.num_edges);
     hooks_region_begin("load_edge_list");
-    emu_1d_array_apply(EL.src, EL.num_edges, GLOBAL_GRAIN_MIN(EL.num_edges, 32768),
+    emu_1d_array_apply(EL.src, EL.num_edges,
+        // Force one thread per nodelet
+        EL.num_edges / NODELETS(),
         buffered_edge_list_reader, filename, header.header_length
     );
     hooks_region_end();
