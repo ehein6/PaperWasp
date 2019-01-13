@@ -6,8 +6,6 @@
 #include <cassert>
 
 #include "pvector.h"
-#include "rmat_args.h"
-#include "rmat_generator.h"
 
 using std::cerr;
 
@@ -47,7 +45,6 @@ protected:
     {
         std::ostringstream oss;
         oss << " --format " << format;
-        // unlike args.num_edges, this is the actual number of edges after dups were removed
         oss << " --num_edges " << edges.size();
         oss << " --num_vertices " << num_vertices;
         if (flags.is_undirected) { oss << " --is_undirected"; }
@@ -57,56 +54,6 @@ protected:
         if (flags.is_permuted)   { oss << " --is_permuted"; }
         oss << "\n";
         return oss.str();
-    }
-
-
-    // Fill up the array with randomly generated edges
-    void fill_edges()
-    {
-        // Make a local copy of the edge generator
-        rmat_edge_generator local_rng = generator;
-
-        // Keeps track of this thread's position in the random number stream relative to the loop index
-        int64_t pos = 0;
-        const int64_t num_edges = static_cast<int64_t>(edges.size());
-
-        // Generate edges in parallel, while maintaining RNG state as if we did it serially
-        // Mark the RNG with firstprivate so each thread gets a copy of the inital state
-        // Also mark the RNG with lastprivate so the master thread gets the state after the last iteration
-        #pragma omp parallel for \
-        firstprivate(local_rng) lastprivate(local_rng) \
-        firstprivate(pos) \
-        schedule(static)
-        for (int64_t i = 0; i < num_edges; ++i)
-        {
-            // Assuming we will always execute loop iterations in order (we can't jump backwards)
-            assert(pos <= i);
-            // Advance RNG whenever we skip ahead in the iteration space
-            if (pos < i) {
-                uint64_t skip_distance = static_cast<uint64_t>(i - pos);
-                local_rng.discard(skip_distance);
-            }
-            // Generate the next random edge
-            Edge& e = edges[i];
-            local_rng.next_edge(&e.src, &e.dst);
-
-            // Remember position, in case OpenMP jumps through the iteration space
-            pos = i+1;
-        }
-
-        // Go back through the list and regenerate self-edges
-        // This step is serial, since we don't know how many times each edge has to be
-        // re-rolled before we get a non-self-edge
-        for (int64_t i = 0; i < num_edges; ++i)
-        {
-            Edge& e = edges[i];
-            while (e.src == e.dst) {
-                local_rng.next_edge(&e.src, &e.dst);
-            }
-        }
-
-        // Copy final RNG state back to caller
-        generator = local_rng;
     }
 
 
@@ -128,7 +75,8 @@ protected:
 	    if (sscanf(instr, "%ld %ld", &read_src, &read_dst) == 2) {
               Edge e = { read_src, read_dst };
 	      edges.push_back(e);
-	      num_vertices = max(num_vertices, max(read_src, read_dst));
+	      int64_t emax = std::max<int64_t>(read_src, read_dst);
+	      num_vertices = std::max<int64_t>(num_vertices, emax);
 	    }
         }
         fclose(fp);
@@ -187,7 +135,7 @@ protected:
     void
     remap_vertex_ids()
     {
-        pvector<int64_t> mapping(args.num_vertices);
+        pvector<int64_t> mapping(num_vertices);
         std::iota(mapping.begin(), mapping.end(), 0);
         std::random_shuffle(mapping.begin(), mapping.end());
         std::for_each(edges.begin(), edges.end(),
@@ -210,8 +158,8 @@ public:
 
     // Construct
     explicit
-    graph_challenge_edge_reader()
-        : edges(0);
+    graph_challenge_edge_reader(int64_t n)
+        : edges(n)
         , flags{0}
     {
     }
@@ -270,9 +218,9 @@ main(int argc, const char* argv[])
     {
         int64_t src, dst;
     };
-    graph_challenge_edge_reader<edge> pg();
+    graph_challenge_edge_reader<edge> pg(1);
     std::cerr << "Generating from file " << argv[1] << "...\n";
-    pg.generate_from_file(filename);
+    pg.generate(filename);
     std::cerr << "Writing to file...\n";
     pg.dump(filename + fileext);
     std::cerr << "...Done\n";
