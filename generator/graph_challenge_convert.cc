@@ -220,7 +220,7 @@ main(int argc, const char* argv[])
     };
     graph_challenge_edge_reader<edge> pg(1);
     std::cerr << "Generating from file " << argv[1] << "...\n";
-    pg.generate(filename);
+    pg.generate_and_preprocess(filename);
     std::cerr << "Writing to file...\n";
     pg.dump(filename + fileext);
     std::cerr << "...Done\n";
