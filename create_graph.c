@@ -7,7 +7,6 @@
 
 const struct option long_options[] = {
     {"graph_filename"   , required_argument},
-    {"distributed_load" , no_argument},
     {"heavy_threshold"  , required_argument},
     {"dump_edge_list"   , no_argument},
     {"check_graph"      , no_argument},
@@ -21,7 +20,6 @@ print_help(const char* argv0)
 {
     LOG( "Usage: %s [OPTIONS]\n", argv0);
     LOG("\t--graph_filename     Path to graph file to load\n");
-    LOG("\t--distributed_load   Load the graph from all nodes at once (File must exist on all nodes, use absolute path).\n");
     LOG("\t--heavy_threshold    Vertices with this many neighbors will be spread across nodelets\n");
     LOG("\t--dump_edge_list     Print the edge list to stdout after loading (slow)\n");
     LOG("\t--check_graph        Validate the constructed graph against the edge list (slow)\n");
@@ -31,7 +29,6 @@ print_help(const char* argv0)
 
 typedef struct graph_args {
     const char* graph_filename;
-    bool distributed_load;
     long heavy_threshold;
     bool dump_edge_list;
     bool check_graph;
@@ -43,7 +40,6 @@ parse_args(int argc, char *argv[])
 {
     graph_args args;
     args.graph_filename = NULL;
-    args.distributed_load = false;
     args.heavy_threshold = LONG_MAX;
     args.dump_edge_list = false;
     args.check_graph = false;
@@ -65,8 +61,6 @@ parse_args(int argc, char *argv[])
 
         if (!strcmp(option_name, "graph_filename")) {
             args.graph_filename = optarg;
-        } else if (!strcmp(option_name, "distributed_load")) {
-            args.distributed_load = true;
         } else if (!strcmp(option_name, "heavy_threshold")) {
             args.heavy_threshold = atol(optarg);
         } else if (!strcmp(option_name, "dump_edge_list")) {
@@ -98,11 +92,7 @@ int main(int argc, char ** argv)
     hooks_set_attr_i64("heavy_threshold", args.heavy_threshold);
 
     // Load the edge list
-    if (args.distributed_load) {
-        load_edge_list_distributed(args.graph_filename);
-    } else {
-        load_edge_list(args.graph_filename);
-    }
+    load_edge_list(args.graph_filename);
     if (args.dump_edge_list) {
         LOG("Dumping edge list...\n");
         dump_edge_list();
