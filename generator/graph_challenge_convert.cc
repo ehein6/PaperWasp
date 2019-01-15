@@ -161,6 +161,7 @@ public:
     graph_challenge_edge_reader(int64_t n)
         : edges(n)
         , flags{0}
+        , num_vertices(0)
     {
     }
 
@@ -172,8 +173,8 @@ public:
         flip_edges();
         sort_edges();
         dedup_edges();
-        remap_vertex_ids();
-        shuffle_edges();
+	//	remap_vertex_ids();
+	//      shuffle_edges();
     }
 
     // This one follows the rules of graph500
@@ -218,7 +219,7 @@ main(int argc, const char* argv[])
     {
         int64_t src, dst;
     };
-    graph_challenge_edge_reader<edge> pg(1);
+    graph_challenge_edge_reader<edge> pg(0);
     std::cerr << "Generating from file " << argv[1] << "...\n";
     pg.generate_and_preprocess(filename);
     std::cerr << "Writing to file...\n";
