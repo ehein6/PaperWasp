@@ -5,7 +5,7 @@
 #include <emu_c_utils/emu_c_utils.h>
 #include <stdio.h>
 #include "ack_control.h"
-#include "hybrid_bfs.h"
+#include "cursor.h"
 
 // Global replicated struct with BFS data pointers
 replicated hybrid_bfs_data HYBRID_BFS;
@@ -588,67 +588,6 @@ hybrid_bfs_run (long source, long alpha, long beta)
         // dump_queue_stats();
     }
 }
-
-
-typedef struct cursor
-{
-    // Pointer to current edge
-    long * e;
-    // Pointer to last edge in block
-    long * end;
-    // Pointer to current edge block (ignored for light vertex)
-    edge_block * eb;
-    // Index of current nodelet (ignored for light vertex)
-    long nlet;
-} cursor;
-
-void
-cursor_init_out(cursor * c, long src)
-{
-    if (is_heavy_out(src)) {
-        c->nlet = 0;
-        c->eb = mw_get_nth(G.vertex_out_neighbors[src].repl_edge_block, 0);
-        c->e = c->eb->edges;
-        c->end = c->e + c->eb->num_edges;
-    } else {
-        c->eb = NULL;
-        c->e = G.vertex_out_neighbors[src].local_edges;
-        c->end = c->e + G.vertex_out_degree[src];
-    }
-}
-
-bool
-cursor_valid(cursor * c)
-{
-    return c->e && c->e < c->end;
-}
-
-// Move to next edge
-void
-cursor_next(cursor * c)
-{
-    if (!c->e) { return; }
-    // Move to the next edge
-    c->e++;
-    // Check for end of array
-    if (c->e >= c->end) {
-        // If this was a light vertex, we're done
-        if (!c->eb) {
-            c->e = NULL;
-        // If this was a heavy vertex, move to the next edge block
-        } else {
-            c->nlet++;
-            if (c->nlet >= NODELETS()) {
-                c->e = NULL;
-                return;
-            }
-            edge_block * eb = mw_get_nth(c->eb, c->nlet);
-            c->e = eb->edges;
-            c->end = c->e + eb->num_edges;
-        }
-    }
-}
-
 
 bool
 hybrid_bfs_check(long source)

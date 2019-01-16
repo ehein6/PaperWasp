@@ -25,15 +25,27 @@ if (NOT CMAKE_SYSTEM_NAME STREQUAL "Emu1")
 endif()
 
 include_directories(.)
-add_executable(hybrid_bfs
-    ack_control.h
-    bitmap.h
+
+add_library(graph_loader OBJECT
     graph.h
     graph_from_edge_list.h
     graph_from_edge_list.c
     load_edge_list.h
     load_edge_list.c
+)
+
+add_executable(hybrid_bfs
+    $<TARGET_OBJECTS:graph_loader>
+    ack_control.h
+    bitmap.h
     hybrid_bfs.h
     hybrid_bfs.c
-    main.c
+    hybrid_bfs_main.c
+)
+
+add_executable(tc
+    $<TARGET_OBJECTS:graph_loader>
+    tc.h
+    tc.c
+    tc_main.c
 )
