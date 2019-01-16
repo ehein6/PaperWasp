@@ -51,8 +51,6 @@ lower_bound(long * first, long * last, long value)
 void
 count_triangles_worker(long u, long * v1, long * v2)
 {
-    // Once we've found a triangle u->v->w where u > v > w,
-    long * p_uw = G.vertex_out_neighbors[u].local_edges;
     for (long * p_v = v1; p_v < v2; ++p_v) {
         long v = *p_v;
         // At this point we have one side of the triangle, from u to v
@@ -62,6 +60,8 @@ count_triangles_worker(long u, long * v1, long * v2)
         // Once again, we limit ourselves to the neighbors of v that are less than v
         // using a binary search
         vw_end = lower_bound(vw_begin, vw_end, v);
+        // Iterator over edges of u
+        long * p_uw = G.vertex_out_neighbors[u].local_edges;
         for (long * p_w = vw_begin; p_w < vw_end; ++p_w) {
             // Now we have u->v and v->w
             long w = *p_w;
@@ -69,6 +69,7 @@ count_triangles_worker(long u, long * v1, long * v2)
             while (*p_uw < w) { p_uw++; } // TODO this could use lower_bound
             if (w == *p_uw) {
                 // Found the triangle u->v->w
+                // LOG("Found triangle %li->%li->%li\n", u, v, w);
                 REMOTE_ADD(&TC.num_triangles, 1);
             }
         }
@@ -138,6 +139,7 @@ tc_check()
                 // Scan through u.neighbors, looking for w
                 while (*cu2.e < w) { cursor_next(&cu2); }
                 if (w == *cu2.e) {
+                    // LOG("Found triangle %li->%li->%li\n", u, v, w);
                     correct_num_triangles += 1;
                 }
             }
@@ -145,5 +147,9 @@ tc_check()
     }
 
     // Compare with the parallel results
-    return TC.num_triangles == correct_num_triangles;
+    bool success = TC.num_triangles == correct_num_triangles;
+    if (!success) {
+        LOG("Should have found %li triangles\n", correct_num_triangles);
+    }
+    return success;
 }
