@@ -278,6 +278,7 @@ static noinline void
 frontier_visitor(long src, long * edges_begin, long * edges_end, long * scout_count)
 {
     for (long * e = edges_begin; e < edges_end; ++e) {
+        RESIZE();
         long dst = *e;
         // Look up the parent of the vertex we are visiting
         long * parent = &HYBRID_BFS.parent[dst];
