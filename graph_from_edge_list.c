@@ -248,9 +248,11 @@ sort_edge_blocks_worker(long * array, long begin, long end, va_list args)
 void
 sort_edge_blocks()
 {
+    hooks_region_begin("sort_edge_blocks");
     emu_1d_array_apply(G.vertex_out_degree, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 8),
         sort_edge_blocks_worker
     );
+    hooks_region_end();
 }
 
 bool

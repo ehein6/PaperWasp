@@ -118,7 +118,7 @@ main(int argc, char ** argv)
     // Build the graph
     LOG("Constructing graph...\n");
     construct_graph_from_edge_list(LONG_MAX); // No heavy vertices for TC
-    LOG("Sorting edge blocks..\n");
+    LOG("Sorting edge blocks...\n");
     sort_edge_blocks();
     print_graph_distribution();
     hooks_set_attr_i64("num_undirected_edges", G.num_edges/2);
