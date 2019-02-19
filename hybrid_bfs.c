@@ -561,7 +561,7 @@ hybrid_bfs_run (long source, long alpha, long beta)
     sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
     HYBRID_BFS.parent[source] = source;
 
-    long edges_to_check = G.num_edges / 2;
+    long edges_to_check = G.num_edges * 2;
     long scout_count = G.vertex_out_degree[source];
 
     // While there are vertices in the queue...
