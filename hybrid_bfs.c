@@ -592,9 +592,30 @@ hybrid_bfs_run (long source, long alpha, long beta)
             // hooks_region_end();
             scout_count = 1;
         } else {
-            // hooks_set_attr_i64("queue_size", sliding_queue_combined_size(&HYBRID_BFS.queue));
-            // hooks_region_begin("top_down_step");
+            // Update statistics
             edges_to_check -= scout_count;
+            long awake_count = sliding_queue_combined_size(&HYBRID_BFS.queue);
+
+            // Decide which variant to use
+            if (!HYBRID_BFS.use_remote_writes) {
+                if (scout_count > edges_to_check / alpha) {
+                    HYBRID_BFS.use_remote_writes = true;
+                }
+            } else {
+                if (awake_count <= G.num_vertices / beta) {
+                    HYBRID_BFS.use_remote_writes = false;
+                }
+            }
+
+            // Record stats
+            // hooks_set_attr_i64("awake_count", awake_count);
+            // hooks_set_attr_i64("scout_count", scout_count);
+            // hooks_set_attr_i64("edges_to_check", edges_to_check);
+            // if (HYBRID_BFS.use_remote_writes) { hooks_set_attr_str("alg", "remote_writes"); }
+            // else                              { hooks_set_attr_str("alg", "migrating_threads"); }
+
+            // Do one step
+            // hooks_region_begin("top_down_step");
             if (HYBRID_BFS.use_remote_writes) {
                 scout_count = top_down_step_with_remote_writes();
             } else {
