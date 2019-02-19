@@ -269,7 +269,9 @@ int main(int argc, char ** argv)
             (1e-6 * num_edges_traversed) / (time_ms / 1000)
         );
         // Reset for next run
-        hybrid_bfs_data_clear();
+        if (s+1 < args.num_trials) {
+            hybrid_bfs_data_clear();
+        }
     }
     return 0;
 }
