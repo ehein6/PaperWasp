@@ -51,6 +51,7 @@ lower_bound(long * first, long * last, long value)
 void
 count_triangles_worker(long u, long * v1, long * v2)
 {
+    long num_triangles = 0;
     for (long * p_v = v1; p_v < v2; ++p_v) {
         long v = *p_v;
         // At this point we have one side of the triangle, from u to v
@@ -70,17 +71,18 @@ count_triangles_worker(long u, long * v1, long * v2)
             if (w == *p_uw) {
                 // Found the triangle u->v->w
                 // LOG("Found triangle %li->%li->%li\n", u, v, w);
-                REMOTE_ADD(&TC.num_triangles, 1);
+                ++num_triangles;
             }
         }
     }
+    REMOTE_ADD(&TC.num_triangles, num_triangles);
 }
 
 // Count triangles that start at vertex u
 void
 count_triangles(long u)
 {
-    long grain = 128;
+    long grain = 16;
 
     // Use binary search to find neighbors of u that are less than u.
     long * v_begin = G.vertex_out_neighbors[u].local_edges;
@@ -109,7 +111,7 @@ count_triangles_spawner(long * array, long begin, long end, va_list args)
 long
 tc_run()
 {
-    emu_1d_array_apply(G.vertex_out_degree, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 1),
+    emu_1d_array_apply(G.vertex_out_degree, G.num_vertices, 1,
         count_triangles_spawner
     );
     return TC.num_triangles;
