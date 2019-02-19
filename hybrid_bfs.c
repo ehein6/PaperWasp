@@ -152,7 +152,7 @@ static inline void
 mark_neighbors_parallel(long src, long * edges_begin, long * edges_end)
 {
     long degree = edges_end - edges_begin;
-    long grain = MY_LOCAL_GRAIN_MIN(degree, 128);
+    long grain = 512;
     if (degree <= grain) {
         // Low-degree local vertex, handle in this thread
         mark_neighbors(src, edges_begin, edges_end);
@@ -173,12 +173,14 @@ mark_neighbors_in_eb(long src, edge_block * eb)
 }
 
 void
-mark_queue_neighbors_worker(long begin, long end, va_list args)
+mark_queue_neighbors_worker(sliding_queue * queue, long * queue_pos)
 {
-    // For each vertex in our slice of the queue...
-    long * vertex_queue = va_arg(args, long*);
-    for (long v = begin; v < end; ++v) {
-        long src = vertex_queue[v];
+    // Keep grabbing vertices off the local queue
+    const long queue_end = queue->end;
+    const long * queue_buffer = queue->buffer;
+    long v = ATOMIC_ADDMS(queue_pos, 1);
+    for (; v < queue_end; v = ATOMIC_ADDMS(queue_pos, 1)) {
+        long src = queue_buffer[v];
         // How big is this vertex?
         if (is_heavy_out(src)) {
             // Heavy vertex, spawn a thread for each remote edge block
@@ -196,12 +198,21 @@ mark_queue_neighbors_worker(long begin, long end, va_list args)
 }
 
 void
-mark_queue_neighbors(sliding_queue * queue)
+mark_queue_neighbors_spawner(sliding_queue * queue)
 {
     ack_control_disable_acks();
-    emu_local_for(queue->start, queue->end, MY_LOCAL_GRAIN_MIN(queue->end - queue->start, 8),
-        mark_queue_neighbors_worker, queue->buffer
-    );
+    // Decide how many workers to create
+    long num_workers = 64;
+    long queue_size = sliding_queue_size(queue);
+    if (queue_size < num_workers) {
+        num_workers = queue_size;
+    }
+    // Spawn workers
+    long queue_pos = queue->start;
+    for (long t = 0; t < num_workers; ++t) {
+        cilk_spawn mark_queue_neighbors_worker(queue, &queue_pos);
+    }
+    cilk_sync;
     ack_control_reenable_acks();
 }
 
@@ -232,12 +243,12 @@ top_down_step_with_remote_writes()
     // For each neighbor, write your vertex ID to new_parent
     for (long n = 0; n < NODELETS(); ++n) {
         sliding_queue * local_queue = mw_get_nth(&HYBRID_BFS.queue, n);
-        cilk_spawn mark_queue_neighbors(local_queue);
+        cilk_spawn_at(local_queue) mark_queue_neighbors_spawner(local_queue);
     }
     cilk_sync;
     // Add to the queue all vertices that didn't have a parent before
     long scout_count = 0;
-    emu_1d_array_apply(HYBRID_BFS.parent, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 256),
+    emu_1d_array_apply(HYBRID_BFS.parent, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 128),
         populate_next_frontier, &scout_count
     );
     return scout_count;
@@ -287,7 +298,7 @@ void
 explore_frontier_parallel(long src, long * edges_begin, long * edges_end, long * scout_count)
 {
     long degree = edges_end - edges_begin;
-    long grain = MY_LOCAL_GRAIN_MIN(degree, 128);
+    long grain = 512;
     if (degree <= grain) {
         // Low-degree local vertex, handle in this thread
         // TODO spawn here to separate from parent thread?
@@ -309,13 +320,13 @@ explore_frontier_in_eb(long src, edge_block * eb, long * scout_count)
 }
 
 void
-explore_frontier_spawner(long begin, long end, va_list args)
+explore_frontier_worker(sliding_queue * queue, long * queue_pos, long * scout_count)
 {
-    // For each vertex in our slice of the queue...
-    long * vertex_queue = va_arg(args, long*);
-    long * scout_count = va_arg(args, long*);
-    for (long v = begin; v < end; ++v) {
-        long src = vertex_queue[v];
+    const long queue_end = queue->end;
+    const long * queue_buffer = queue->buffer;
+    long v = ATOMIC_ADDMS(queue_pos, 1);
+    for (; v < queue_end; v = ATOMIC_ADDMS(queue_pos, 1)) {
+        long src = queue_buffer[v];
         // How big is this vertex?
         if (is_heavy_out(src)) {
             // Heavy vertex, spawn a thread for each remote edge block
@@ -335,10 +346,19 @@ explore_frontier_spawner(long begin, long end, va_list args)
 void
 explore_local_frontier(sliding_queue * queue, long * scout_count)
 {
+    // Decide how many workers to create
+    long num_workers = 64;
+    long queue_size = sliding_queue_size(queue);
+    if (queue_size < num_workers) {
+        num_workers = queue_size;
+    }
+    // Spawn workers
     long local_scout_count = 0;
-    emu_local_for(queue->start, queue->end, MY_LOCAL_GRAIN_MIN(queue->end - queue->start, 8),
-        explore_frontier_spawner, queue->buffer, &local_scout_count
-    );
+    long queue_pos = queue->start;
+    for (long t = 0; t < num_workers; ++t) {
+        cilk_spawn explore_frontier_worker(queue, &queue_pos, &local_scout_count);
+    }
+    cilk_sync;
     REMOTE_ADD(scout_count, local_scout_count);
 }
 
@@ -350,7 +370,7 @@ top_down_step_with_migrating_threads()
     long scout_count = 0;
     for (long n = 0; n < NODELETS(); ++n) {
         sliding_queue * local_queue = mw_get_nth(&HYBRID_BFS.queue, n);
-        cilk_spawn explore_local_frontier(local_queue, &scout_count);
+        cilk_spawn_at(local_queue) explore_local_frontier(local_queue, &scout_count);
     }
     cilk_sync;
     return scout_count;
