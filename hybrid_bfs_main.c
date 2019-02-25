@@ -213,25 +213,20 @@ int main(int argc, char ** argv)
     // Initialize the algorithm
     LOG("Initializing BFS data structures...\n");
     hooks_set_attr_str("algorithm", args.algorithm);
-    bool use_remote_writes;
-    bool enable_hybrid;
-    if (!strcmp(args.algorithm, "remote_writes")) {
-        use_remote_writes = true;
-        enable_hybrid = false;
+    hybrid_bfs_alg alg;
+    if        (!strcmp(args.algorithm, "remote_writes")) {
+        alg = REMOTE_WRITES;
     } else if (!strcmp(args.algorithm, "migrating_threads")) {
-        use_remote_writes = false;
-        enable_hybrid = false;
+        alg = MIGRATING_THREADS;
     } else if (!strcmp(args.algorithm, "remote_writes_hybrid")) {
-        use_remote_writes = true;
-        enable_hybrid = true;
-    } else if (!strcmp(args.algorithm, "migrating_threads_hybrid")) {
-        use_remote_writes = false;
-        enable_hybrid = true;
+        alg = REMOTE_WRITES_HYBRID;
+    } else if (!strcmp(args.algorithm, "beamer_hybrid")) {
+        alg = BEAMER_HYBRID;
     } else {
         LOG("Algorithm '%s' not implemented!\n", args.algorithm);
         exit(1);
     }
-    hybrid_bfs_init(use_remote_writes, enable_hybrid);
+    hybrid_bfs_init();
 
     // Initialize RNG with deterministic seed
     lcg_init(&lcg_state, 0);
@@ -250,7 +245,7 @@ int main(int argc, char ** argv)
         // Run the BFS
         hooks_set_attr_i64("source_vertex", source);
         hooks_region_begin("bfs");
-        hybrid_bfs_run(source, args.alpha, args.beta);
+        hybrid_bfs_run(alg, source, args.alpha, args.beta);
         double time_ms = hooks_region_end();
         if (args.check_results) {
             LOG("Checking results...\n");

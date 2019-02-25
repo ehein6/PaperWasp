@@ -4,10 +4,6 @@
 #include "sliding_queue.h"
 #include "bitmap.h"
 typedef struct hybrid_bfs_data {
-    // Switch to remote write algorithm
-    long use_remote_writes;
-    // Use hybrid BFS (bottom-up)
-    long enable_hybrid;
     // For each vertex, parent in the BFS tree.
     long * parent;
     // Temporary copy of parent array
@@ -21,10 +17,17 @@ typedef struct hybrid_bfs_data {
 } hybrid_bfs_data;
 
 // Global replicated struct with BFS data pointers
-extern replicated hybrid_bfs_data BFS;
+extern replicated hybrid_bfs_data HYBRID_BFS;
 
-void hybrid_bfs_init(long use_remote_writes, long enable_hybrid);
-void hybrid_bfs_run (long source, long alpha, long beta);
+typedef enum hybrid_bfs_alg {
+    REMOTE_WRITES,
+    MIGRATING_THREADS,
+    REMOTE_WRITES_HYBRID,
+    BEAMER_HYBRID,
+} hybrid_bfs_alg;
+
+void hybrid_bfs_init();
+void hybrid_bfs_run(hybrid_bfs_alg alg, long source, long alpha, long beta);
 long hybrid_bfs_count_num_traversed_edges();
 bool hybrid_bfs_check(long source);
 void hybrid_bfs_print_tree();

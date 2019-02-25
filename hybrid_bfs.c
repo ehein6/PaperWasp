@@ -93,10 +93,8 @@ hybrid_bfs_data_clear()
 
 
 void
-hybrid_bfs_init(long use_remote_writes, long enable_hybrid)
+hybrid_bfs_init()
 {
-    mw_replicated_init(&HYBRID_BFS.use_remote_writes, use_remote_writes);
-    mw_replicated_init(&HYBRID_BFS.enable_hybrid, enable_hybrid);
     init_striped_array(&HYBRID_BFS.parent, G.num_vertices);
     init_striped_array(&HYBRID_BFS.new_parent, G.num_vertices);
     sliding_queue_replicated_init(&HYBRID_BFS.queue, G.num_vertices);
@@ -550,10 +548,14 @@ bottom_up_step()
     return awake_count;
 }
 
-
-
+/**
+ * Run BFS using Scott Beamer's direction-optimizing algorithm
+ *  1. Do top-down steps with migrating threads until condition is met
+ *  2. Do bottom-up steps until condition is met
+ *  3. Do top-down steps with migrating threads until done
+ */
 void
-hybrid_bfs_run (long source, long alpha, long beta)
+hybrid_bfs_run_beamer (long source, long alpha, long beta)
 {
     assert(source < G.num_vertices);
 
@@ -567,8 +569,7 @@ hybrid_bfs_run (long source, long alpha, long beta)
 
     // While there are vertices in the queue...
     while (!sliding_queue_all_empty(&HYBRID_BFS.queue)) {
-
-        if (HYBRID_BFS.enable_hybrid && (scout_count > edges_to_check / alpha)) {
+        if (scout_count > edges_to_check / alpha) {
             long awake_count, old_awake_count;
             // Convert sliding queue to bitmap
             // hooks_region_begin("queue_to_bitmap");
@@ -593,41 +594,125 @@ hybrid_bfs_run (long source, long alpha, long beta)
             // hooks_region_end();
             scout_count = 1;
         } else {
-            // Update statistics
             edges_to_check -= scout_count;
-            long awake_count = sliding_queue_combined_size(&HYBRID_BFS.queue);
-
-            // Decide which variant to use
-            if (!HYBRID_BFS.use_remote_writes) {
-                if (scout_count > edges_to_check / alpha) {
-                    HYBRID_BFS.use_remote_writes = true;
-                }
-            } else {
-                if (awake_count <= G.num_vertices / beta) {
-                    HYBRID_BFS.use_remote_writes = false;
-                }
-            }
-
-            // Record stats
-            // hooks_set_attr_i64("awake_count", awake_count);
-            // hooks_set_attr_i64("scout_count", scout_count);
-            // hooks_set_attr_i64("edges_to_check", edges_to_check);
-            // if (HYBRID_BFS.use_remote_writes) { hooks_set_attr_str("alg", "remote_writes"); }
-            // else                              { hooks_set_attr_str("alg", "migrating_threads"); }
-
-            // Do one step
+            // Do a top-down step
             // hooks_region_begin("top_down_step");
-            if (HYBRID_BFS.use_remote_writes) {
-                scout_count = top_down_step_with_remote_writes();
-            } else {
-                scout_count = top_down_step_with_migrating_threads();
-            }
+            scout_count = top_down_step_with_migrating_threads();
             // Slide all queues to explore the next frontier
             sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
             // hooks_region_end();
         }
-
         // dump_queue_stats();
+    }
+}
+
+/**
+ * Run BFS using top-down steps with migrating threads
+ */
+void
+hybrid_bfs_run_with_migrating_threads(long source)
+{
+    assert(source < G.num_vertices);
+
+    // Start with the source vertex in the first frontier, at level 0, and mark it as visited
+    sliding_queue_push_back(mw_get_nth(&HYBRID_BFS.queue, 0), source);
+    sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
+    HYBRID_BFS.parent[source] = source;
+
+    // While there are vertices in the queue...
+    while (!sliding_queue_all_empty(&HYBRID_BFS.queue)) {
+        // Explore the frontier
+        top_down_step_with_migrating_threads();
+        // Slide all queues to explore the next frontier
+        sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
+    }
+}
+
+/**
+ * Run BFS using top-down steps with remote writes
+ */
+void
+hybrid_bfs_run_with_remote_writes(long source)
+{
+    assert(source < G.num_vertices);
+
+    // Start with the source vertex in the first frontier, at level 0, and mark it as visited
+    sliding_queue_push_back(mw_get_nth(&HYBRID_BFS.queue, 0), source);
+    sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
+    HYBRID_BFS.parent[source] = source;
+
+    // While there are vertices in the queue...
+    while (!sliding_queue_all_empty(&HYBRID_BFS.queue)) {
+        // Explore the frontier
+        top_down_step_with_remote_writes();
+        // Slide all queues to explore the next frontier
+        sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
+    }
+}
+
+/**
+ * Run BFS using a hybrid algorithm
+ *  1. Do top-down steps with migrating threads until condition is met
+ *  2. Do top-down steps with remote writes until condition is met
+ *  3. Do top-down steps with migrating threads until done
+ */
+void
+hybrid_bfs_run_with_remote_writes_hybrid(long source, long alpha, long beta)
+{
+    assert(source < G.num_vertices);
+
+    // Start with the source vertex in the first frontier, at level 0, and mark it as visited
+    sliding_queue_push_back(mw_get_nth(&HYBRID_BFS.queue, 0), source);
+    sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
+    HYBRID_BFS.parent[source] = source;
+
+    long edges_to_check = G.num_edges * 2;
+    long scout_count = G.vertex_out_degree[source];
+
+    // While there are vertices in the queue...
+    while (!sliding_queue_all_empty(&HYBRID_BFS.queue)) {
+
+        if (scout_count > edges_to_check / alpha) {
+            long awake_count, old_awake_count;
+            awake_count = sliding_queue_combined_size(&HYBRID_BFS.queue);
+            // Do remote-write steps for a while
+            do {
+                old_awake_count = awake_count;
+                scout_count = top_down_step_with_remote_writes();
+                sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
+                awake_count = sliding_queue_combined_size(&HYBRID_BFS.queue);
+            } while (awake_count >= old_awake_count ||
+                     (awake_count > G.num_vertices / beta));
+            scout_count = 1;
+        } else {
+            edges_to_check -= scout_count;
+            scout_count = top_down_step_with_migrating_threads();
+            // Slide all queues to explore the next frontier
+            sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
+        }
+    }
+}
+
+/**
+ * Run breadth-first search on the graph
+ * @param alg Which BFS implementation to use
+ * @param source Source vertex that forms the root of the BFS tree
+ * @param alpha Hybrid BFS parameter, adjusts when to switch from top-down to bottom-up (default 15)
+ * @param beta Hybrid BFS parameter, adjusts when to switch from bottom-up to top down (default 18)
+ */
+void
+hybrid_bfs_run(hybrid_bfs_alg alg, long source, long alpha, long beta)
+{
+    if (alg == REMOTE_WRITES) {
+        hybrid_bfs_run_with_remote_writes(source);
+    } else if (alg == MIGRATING_THREADS) {
+        hybrid_bfs_run_with_remote_writes(source);
+    } else if (alg == REMOTE_WRITES_HYBRID) {
+        hybrid_bfs_run_with_remote_writes_hybrid(source, alpha, beta);
+    } else if (alg == BEAMER_HYBRID) {
+        hybrid_bfs_run_beamer(source, alpha, beta);
+    } else {
+        assert(0);
     }
 }
 
