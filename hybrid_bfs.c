@@ -297,7 +297,7 @@ void
 explore_frontier_parallel(long src, long * edges_begin, long * edges_end, long * scout_count)
 {
     long degree = edges_end - edges_begin;
-    long grain = 512;
+    long grain = 64;
     if (degree <= grain) {
         // Low-degree local vertex, handle in this thread
         // TODO spawn here to separate from parent thread?
