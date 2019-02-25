@@ -96,7 +96,7 @@ parse_args(int argc, char *argv[])
     args.heavy_threshold = LONG_MAX;
     args.num_trials = 1;
     args.source_vertex = -1;
-    args.algorithm = "remote_writes";
+    args.algorithm = "remote_writes_hybrid";
     args.alpha = 15;
     args.beta = 18;
     args.dump_edge_list = false;
