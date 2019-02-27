@@ -284,25 +284,47 @@ top_down_step_with_remote_writes()
  *           call/spawn frontier_visitor over the local edge block
 */
 
+static inline void
+visit(long src, long dst)
+{
+    // Look up the parent of the vertex we are visiting
+    long * parent = &HYBRID_BFS.parent[dst];
+    long curr_val = *parent;
+    // If we are the first to visit this vertex
+    if (curr_val < 0) {
+        // Set self as parent of this vertex
+        if (ATOMIC_CAS(parent, src, curr_val) == curr_val) {
+            // Add it to the queue
+            sliding_queue_push_back(&HYBRID_BFS.queue, dst);
+            REMOTE_ADD(&HYBRID_BFS.scout_count, -curr_val);
+        }
+    }
+}
+
 // Using noinline to minimize the size of the migrating context
 static noinline void
 frontier_visitor(long src, long * edges_begin, long * edges_end)
 {
-    for (long * e = edges_begin; e < edges_end; ++e) {
-        RESIZE();
-        long dst = *e;
-        // Look up the parent of the vertex we are visiting
-        long * parent = &HYBRID_BFS.parent[dst];
-        long curr_val = *parent;
-        // If we are the first to visit this vertex
-        if (curr_val < 0) {
-            // Set self as parent of this vertex
-            if (ATOMIC_CAS(parent, src, curr_val) == curr_val) {
-                // Add it to the queue
-                sliding_queue_push_back(&HYBRID_BFS.queue, dst);
-                REMOTE_ADD(&HYBRID_BFS.scout_count, -curr_val);
-            }
-        }
+    long e1, e2, e3, e4;
+
+    // Visit neighbors one at a time until remainder is evenly divisible by four
+    while ((edges_end - edges_begin) % 4 != 0) {
+        visit(src, *edges_begin++);
+    }
+
+    for (long * e = edges_begin; e < edges_end;) {
+        // Pick up four edges
+        e4 = *e++;
+        e3 = *e++;
+        e2 = *e++;
+        e1 = *e++;
+        // Visit each neighbor without returning home
+        // Once an edge has been traversed, we can resize to
+        // avoid carrying it along with us.
+        visit(src, e1); RESIZE();
+        visit(src, e2); RESIZE();
+        visit(src, e3); RESIZE();
+        visit(src, e4); RESIZE();
     }
 }
 
