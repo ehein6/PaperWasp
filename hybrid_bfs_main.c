@@ -253,7 +253,7 @@ int main(int argc, char ** argv)
                 LOG("PASS\n");
             } else {
                 LOG("FAIL\n");
-                hybrid_bfs_print_tree();
+//                hybrid_bfs_print_tree();
             }
         }
         // Output results

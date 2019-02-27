@@ -91,6 +91,18 @@ hybrid_bfs_data_clear()
     bitmap_replicated_clear(&HYBRID_BFS.next_frontier);
 }
 
+static void
+scout_count_allreduce()
+{
+    // Add up all replicated copies
+    long sum = 0;
+    for (long nlet = 0; nlet < NODELETS(); ++nlet) {
+        long local_scout_count = *(long*)mw_get_nth(&HYBRID_BFS.scout_count, nlet);
+        sum += local_scout_count;
+    }
+    // Set all copies to the sum
+    mw_replicated_init(&HYBRID_BFS.scout_count, sum);
+}
 
 void
 hybrid_bfs_init()
@@ -220,7 +232,6 @@ mark_queue_neighbors_spawner(sliding_queue * queue)
 static void
 populate_next_frontier(long * array, long begin, long end, va_list args)
 {
-    long * scout_count = va_arg(args, long*);
     long local_scout_count = 0;
     for (long i = begin; i < end; i += NODELETS()) {
         if (HYBRID_BFS.parent[i] < 0 && HYBRID_BFS.new_parent[i] >= 0) {
@@ -233,10 +244,10 @@ populate_next_frontier(long * array, long begin, long end, va_list args)
         }
     }
     // Update global count
-    REMOTE_ADD(scout_count, local_scout_count);
+    REMOTE_ADD(&HYBRID_BFS.scout_count, local_scout_count);
 }
 
-long
+void
 top_down_step_with_remote_writes()
 {
     // Spawn a thread on each nodelet to process the local queue
@@ -247,11 +258,11 @@ top_down_step_with_remote_writes()
     }
     cilk_sync;
     // Add to the queue all vertices that didn't have a parent before
-    long scout_count = 0;
+    mw_replicated_init(&HYBRID_BFS.scout_count, 0);
     emu_1d_array_apply(HYBRID_BFS.parent, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 128),
-        populate_next_frontier, &scout_count
+        populate_next_frontier
     );
-    return scout_count;
+    scout_count_allreduce();
 }
 
 /**
@@ -275,7 +286,7 @@ top_down_step_with_remote_writes()
 
 // Using noinline to minimize the size of the migrating context
 static noinline void
-frontier_visitor(long src, long * edges_begin, long * edges_end, long * scout_count)
+frontier_visitor(long src, long * edges_begin, long * edges_end)
 {
     for (long * e = edges_begin; e < edges_end; ++e) {
         RESIZE();
@@ -289,39 +300,39 @@ frontier_visitor(long src, long * edges_begin, long * edges_end, long * scout_co
             if (ATOMIC_CAS(parent, src, curr_val) == curr_val) {
                 // Add it to the queue
                 sliding_queue_push_back(&HYBRID_BFS.queue, dst);
-                REMOTE_ADD(scout_count, -curr_val);
+                REMOTE_ADD(&HYBRID_BFS.scout_count, -curr_val);
             }
         }
     }
 }
 
 void
-explore_frontier_parallel(long src, long * edges_begin, long * edges_end, long * scout_count)
+explore_frontier_parallel(long src, long * edges_begin, long * edges_end)
 {
     long degree = edges_end - edges_begin;
     long grain = 64;
     if (degree <= grain) {
         // Low-degree local vertex, handle in this thread
         // TODO spawn here to separate from parent thread?
-        frontier_visitor(src, edges_begin, edges_end, scout_count);
+        frontier_visitor(src, edges_begin, edges_end);
     } else {
         // High-degree local vertex, spawn local threads
         for (long * e1 = edges_begin; e1 < edges_end; e1 += grain) {
             long * e2 = e1 + grain;
             if (e2 > edges_end) { e2 = edges_end; }
-            cilk_spawn frontier_visitor(src, e1, e2, scout_count);
+            cilk_spawn frontier_visitor(src, e1, e2);
         }
     }
 }
 
 void
-explore_frontier_in_eb(long src, edge_block * eb, long * scout_count)
+explore_frontier_in_eb(long src, edge_block * eb)
 {
-    explore_frontier_parallel(src, eb->edges, eb->edges + eb->num_edges, scout_count);
+    explore_frontier_parallel(src, eb->edges, eb->edges + eb->num_edges);
 }
 
 void
-explore_frontier_worker(sliding_queue * queue, long * queue_pos, long * scout_count)
+explore_frontier_worker(sliding_queue * queue, long * queue_pos)
 {
     const long queue_end = queue->end;
     const long * queue_buffer = queue->buffer;
@@ -334,18 +345,18 @@ explore_frontier_worker(sliding_queue * queue, long * queue_pos, long * scout_co
             edge_block * eb = G.vertex_out_neighbors[src].repl_edge_block;
             for (long i = 0; i < NODELETS(); ++i) {
                 edge_block * remote_eb = mw_get_nth(eb, i);
-                cilk_spawn_at(remote_eb) explore_frontier_in_eb(src, remote_eb, scout_count);
+                cilk_spawn_at(remote_eb) explore_frontier_in_eb(src, remote_eb);
             }
         } else {
             long * edges_begin = G.vertex_out_neighbors[src].local_edges;
             long * edges_end = edges_begin + G.vertex_out_degree[src];
-            explore_frontier_parallel(src, edges_begin, edges_end, scout_count);
+            explore_frontier_parallel(src, edges_begin, edges_end);
         }
     }
 }
 
 void
-explore_local_frontier(sliding_queue * queue, long * scout_count)
+explore_local_frontier(sliding_queue * queue)
 {
     // Decide how many workers to create
     long num_workers = 64;
@@ -354,27 +365,24 @@ explore_local_frontier(sliding_queue * queue, long * scout_count)
         num_workers = queue_size;
     }
     // Spawn workers
-    long local_scout_count = 0;
     long queue_pos = queue->start;
     for (long t = 0; t < num_workers; ++t) {
-        cilk_spawn explore_frontier_worker(queue, &queue_pos, &local_scout_count);
+        cilk_spawn explore_frontier_worker(queue, &queue_pos);
     }
-    cilk_sync;
-    REMOTE_ADD(scout_count, local_scout_count);
 }
 
-long
+void
 top_down_step_with_migrating_threads()
 {
     // Spawn a thread on each nodelet to process the local queue
     // For each neighbor without a parent, add self as parent and append to queue
-    long scout_count = 0;
+    mw_replicated_init(&HYBRID_BFS.scout_count, 0);
     for (long n = 0; n < NODELETS(); ++n) {
         sliding_queue * local_queue = mw_get_nth(&HYBRID_BFS.queue, n);
-        cilk_spawn_at(local_queue) explore_local_frontier(local_queue, &scout_count);
+        cilk_spawn_at(local_queue) explore_local_frontier(local_queue);
     }
     cilk_sync;
-    return scout_count;
+    scout_count_allreduce();
 }
 
 void
@@ -567,11 +575,11 @@ hybrid_bfs_run_beamer (long source, long alpha, long beta)
     HYBRID_BFS.parent[source] = source;
 
     long edges_to_check = G.num_edges * 2;
-    long scout_count = G.vertex_out_degree[source];
+    mw_replicated_init(&HYBRID_BFS.scout_count, G.vertex_out_degree[source]);
 
     // While there are vertices in the queue...
     while (!sliding_queue_all_empty(&HYBRID_BFS.queue)) {
-        if (scout_count > edges_to_check / alpha) {
+        if (HYBRID_BFS.scout_count > edges_to_check / alpha) {
             long awake_count, old_awake_count;
             // Convert sliding queue to bitmap
             // hooks_region_begin("queue_to_bitmap");
@@ -594,12 +602,12 @@ hybrid_bfs_run_beamer (long source, long alpha, long beta)
             replicated_bitmap_to_queue(&HYBRID_BFS.frontier, &HYBRID_BFS.queue);
             sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
             // hooks_region_end();
-            scout_count = 1;
+            mw_replicated_init(&HYBRID_BFS.scout_count, 1);
         } else {
-            edges_to_check -= scout_count;
+            edges_to_check -= HYBRID_BFS.scout_count;
             // Do a top-down step
             // hooks_region_begin("top_down_step");
-            scout_count = top_down_step_with_migrating_threads();
+            top_down_step_with_migrating_threads();
             // Slide all queues to explore the next frontier
             sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
             // hooks_region_end();
@@ -669,26 +677,26 @@ hybrid_bfs_run_with_remote_writes_hybrid(long source, long alpha, long beta)
     HYBRID_BFS.parent[source] = source;
 
     long edges_to_check = G.num_edges * 2;
-    long scout_count = G.vertex_out_degree[source];
+    mw_replicated_init(&HYBRID_BFS.scout_count, G.vertex_out_degree[source]);
 
     // While there are vertices in the queue...
     while (!sliding_queue_all_empty(&HYBRID_BFS.queue)) {
 
-        if (scout_count > edges_to_check / alpha) {
+        if (HYBRID_BFS.scout_count > edges_to_check / alpha) {
             long awake_count, old_awake_count;
             awake_count = sliding_queue_combined_size(&HYBRID_BFS.queue);
             // Do remote-write steps for a while
             do {
                 old_awake_count = awake_count;
-                scout_count = top_down_step_with_remote_writes();
+                top_down_step_with_remote_writes();
                 sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
                 awake_count = sliding_queue_combined_size(&HYBRID_BFS.queue);
             } while (awake_count >= old_awake_count ||
                      (awake_count > G.num_vertices / beta));
-            scout_count = 1;
+            mw_replicated_init(&HYBRID_BFS.scout_count, 1);
         } else {
-            edges_to_check -= scout_count;
-            scout_count = top_down_step_with_migrating_threads();
+            edges_to_check -= HYBRID_BFS.scout_count;
+            top_down_step_with_migrating_threads();
             // Slide all queues to explore the next frontier
             sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
         }

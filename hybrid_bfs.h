@@ -4,6 +4,8 @@
 #include "sliding_queue.h"
 #include "bitmap.h"
 typedef struct hybrid_bfs_data {
+    // Tracks the sum of the degrees of vertices in the frontier
+    long scout_count;
     // For each vertex, parent in the BFS tree.
     long * parent;
     // Temporary copy of parent array
