@@ -111,6 +111,8 @@ hybrid_bfs_deinit()
     mw_free(HYBRID_BFS.parent);
     mw_free(HYBRID_BFS.new_parent);
     sliding_queue_replicated_deinit(&HYBRID_BFS.queue);
+    bitmap_replicated_deinit(&HYBRID_BFS.frontier);
+    bitmap_replicated_deinit(&HYBRID_BFS.next_frontier);
 }
 
 

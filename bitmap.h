@@ -20,7 +20,7 @@ bitmap_replicated_init(bitmap * self, long n)
 }
 
 static inline void
-bitmap_replicated_free(bitmap * self)
+bitmap_replicated_deinit(bitmap * self)
 {
     mw_free(self->words);
 }
