@@ -706,7 +706,7 @@ hybrid_bfs_run(hybrid_bfs_alg alg, long source, long alpha, long beta)
     if (alg == REMOTE_WRITES) {
         hybrid_bfs_run_with_remote_writes(source);
     } else if (alg == MIGRATING_THREADS) {
-        hybrid_bfs_run_with_remote_writes(source);
+        hybrid_bfs_run_with_migrating_threads(source);
     } else if (alg == REMOTE_WRITES_HYBRID) {
         hybrid_bfs_run_with_remote_writes_hybrid(source, alpha, beta);
     } else if (alg == BEAMER_HYBRID) {
