@@ -219,10 +219,31 @@ compare_longs(const void * a, const void * b)
     return 0;
 }
 
+int
+compare_nodelets(const void * a, const void * b)
+{
+    long lhs = *(long*)a;
+    long rhs = *(long*)b;
+    long nlet_mask = NODELETS() - 1;
+
+    long lhs_nlet = lhs & nlet_mask;
+    long rhs_nlet = rhs & nlet_mask;
+
+    if (lhs_nlet < rhs_nlet) { return -1; }
+    if (lhs_nlet > rhs_nlet) { return  1; }
+    return 0;
+}
+
 void
 sort_edge_block(long * edges_begin, long * edges_end)
 {
     qsort(edges_begin, edges_end-edges_begin, sizeof(long), compare_longs);
+}
+
+void
+sort_edge_block_by_nodelet(long * edges_begin, long * edges_end)
+{
+    qsort(edges_begin, edges_end-edges_begin, sizeof(long), compare_nodelets);
 }
 
 void
