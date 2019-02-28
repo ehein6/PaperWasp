@@ -219,21 +219,6 @@ compare_longs(const void * a, const void * b)
     return 0;
 }
 
-int
-compare_nodelets(const void * a, const void * b)
-{
-    long lhs = *(long*)a;
-    long rhs = *(long*)b;
-    long nlet_mask = NODELETS() - 1;
-
-    long lhs_nlet = lhs & nlet_mask;
-    long rhs_nlet = rhs & nlet_mask;
-
-    if (lhs_nlet < rhs_nlet) { return -1; }
-    if (lhs_nlet > rhs_nlet) { return  1; }
-    return 0;
-}
-
 void
 sort_edge_block(long * edges_begin, long * edges_end)
 {
@@ -270,17 +255,33 @@ sort_edge_blocks()
     hooks_region_end();
 }
 
-void
+static int
+compare_nodelets(const void * a, const void * b)
+{
+    long lhs = *(long*)a;
+    long rhs = *(long*)b;
+    long nlet_mask = NODELETS() - 1;
+
+    long lhs_nlet = lhs & nlet_mask;
+    long rhs_nlet = rhs & nlet_mask;
+
+    if (lhs_nlet < rhs_nlet) { return -1; }
+    if (lhs_nlet > rhs_nlet) { return  1; }
+    return 0;
+}
+
+static void
 sort_edge_block_by_nodelet(long * edges_begin, long * edges_end)
 {
     qsort(edges_begin, edges_end-edges_begin, sizeof(long), compare_nodelets);
 }
 
-void
-sort_edge_blocks_by_nodelet_worker(long * array, long begin, long end, va_list args)
+static void
+sort_edge_blocks_by_nodelet_worker(long *v_pos)
 {
-    (void)array;
-    for (long v = begin; v < end; v += NODELETS()) {
+    // Dynamic schedule, atomically grab the next vertex on this nodelet
+    long v = ATOMIC_ADDMS(v_pos, NODELETS());
+    for (; v < G.num_vertices; v = ATOMIC_ADDMS(v_pos, NODELETS())) {
         if (is_heavy_out(v)) {
             for (long nlet = 0; nlet < NODELETS(); ++nlet) {
                 edge_block * eb = mw_get_nth(G.vertex_out_neighbors[v].repl_edge_block, nlet);
@@ -296,13 +297,26 @@ sort_edge_blocks_by_nodelet_worker(long * array, long begin, long end, va_list a
     }
 }
 
+static void
+sort_edge_blocks_by_nodelet_spawner(long nlet)
+{
+    // Spawn workers to handle edge blocks for all vertices on this nodelet
+    long num_workers = 64;
+    long v = nlet;
+    for (long t = 0; t < num_workers; ++t) {
+        cilk_spawn sort_edge_blocks_by_nodelet_worker(&v);
+    }
+}
+
 void
 sort_edge_blocks_by_nodelet()
 {
     hooks_region_begin("sort_edge_blocks_by_nodelet");
-    emu_1d_array_apply(G.vertex_out_degree, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 8),
-        sort_edge_blocks_by_nodelet_worker
-    );
+    // Spawn a thread at each nodelet to handle local vertices
+    for (long nlet = 0; nlet < NODELETS(); ++nlet) {
+        cilk_spawn_at(&G.vertex_out_neighbors[nlet]) sort_edge_blocks_by_nodelet_spawner(nlet);
+    }
+    cilk_sync;
     hooks_region_end();
 }
 
