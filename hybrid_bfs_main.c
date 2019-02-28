@@ -45,6 +45,7 @@ const struct option long_options[] = {
     {"algorithm"        , required_argument},
     {"alpha"            , required_argument},
     {"beta"             , required_argument},
+    {"sort_edge_blocks" , no_argument},
     {"dump_edge_list"   , no_argument},
     {"check_graph"      , no_argument},
     {"dump_graph"       , no_argument},
@@ -65,6 +66,7 @@ print_help(const char* argv0)
     LOG("\t--algorithm          Select BFS implementation to run\n");
     LOG("\t--alpha              Alpha parameter for direction-optimizing BFS\n");
     LOG("\t--beta               Beta parameter for direction-optimizing BFS\n");
+    LOG("\t--sort_edge_blocks   Sort edge blocks to group neighbors by home nodelet.\n");
     LOG("\t--dump_edge_list     Print the edge list to stdout after loading (slow)\n");
     LOG("\t--check_graph        Validate the constructed graph against the edge list (slow)\n");
     LOG("\t--dump_graph         Print the graph to stdout after construction (slow)\n");
@@ -81,6 +83,7 @@ typedef struct bfs_args {
     const char* algorithm;
     long alpha;
     long beta;
+    bool sort_edge_blocks;
     bool dump_edge_list;
     bool check_graph;
     bool dump_graph;
@@ -99,6 +102,7 @@ parse_args(int argc, char *argv[])
     args.algorithm = "remote_writes_hybrid";
     args.alpha = 15;
     args.beta = 18;
+    args.sort_edge_blocks = false;
     args.dump_edge_list = false;
     args.check_graph = false;
     args.dump_graph = false;
@@ -134,6 +138,8 @@ parse_args(int argc, char *argv[])
             args.alpha = atol(optarg);
         } else if (!strcmp(option_name, "beta")) {
             args.beta = atol(optarg);
+        } else if (!strcmp(option_name, "sort_edge_blocks")) {
+            args.sort_edge_blocks = true;
         } else if (!strcmp(option_name, "dump_edge_list")) {
             args.dump_edge_list = true;
         } else if (!strcmp(option_name, "check_graph")) {
@@ -191,6 +197,10 @@ int main(int argc, char ** argv)
     // Build the graph
     LOG("Constructing graph...\n");
     construct_graph_from_edge_list(args.heavy_threshold);
+    if (args.sort_edge_blocks) {
+        LOG("Sorting edge blocks...\n");
+        sort_edge_blocks_by_nodelet();
+    }
     print_graph_distribution();
     if (args.check_graph) {
         LOG("Checking graph...");
@@ -208,6 +218,7 @@ int main(int argc, char ** argv)
     // Check for valid source vertex
     if (args.source_vertex >= G.num_vertices) {
         LOG("Source vertex %li out of range.\n", args.source_vertex);
+        exit(1);
     }
 
     // Initialize the algorithm

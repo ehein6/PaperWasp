@@ -241,12 +241,6 @@ sort_edge_block(long * edges_begin, long * edges_end)
 }
 
 void
-sort_edge_block_by_nodelet(long * edges_begin, long * edges_end)
-{
-    qsort(edges_begin, edges_end-edges_begin, sizeof(long), compare_nodelets);
-}
-
-void
 sort_edge_blocks_worker(long * array, long begin, long end, va_list args)
 {
     (void)array;
@@ -272,6 +266,42 @@ sort_edge_blocks()
     hooks_region_begin("sort_edge_blocks");
     emu_1d_array_apply(G.vertex_out_degree, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 8),
         sort_edge_blocks_worker
+    );
+    hooks_region_end();
+}
+
+void
+sort_edge_block_by_nodelet(long * edges_begin, long * edges_end)
+{
+    qsort(edges_begin, edges_end-edges_begin, sizeof(long), compare_nodelets);
+}
+
+void
+sort_edge_blocks_by_nodelet_worker(long * array, long begin, long end, va_list args)
+{
+    (void)array;
+    for (long v = begin; v < end; v += NODELETS()) {
+        if (is_heavy_out(v)) {
+            for (long nlet = 0; nlet < NODELETS(); ++nlet) {
+                edge_block * eb = mw_get_nth(G.vertex_out_neighbors[v].repl_edge_block, nlet);
+                long * edges_begin = eb->edges;
+                long * edges_end = edges_begin + eb->num_edges;
+                cilk_spawn sort_edge_block_by_nodelet(edges_begin, edges_end);
+            }
+        } else {
+            long * edges_begin = G.vertex_out_neighbors[v].local_edges;
+            long * edges_end = edges_begin + G.vertex_out_degree[v];
+            sort_edge_block_by_nodelet(edges_begin, edges_end);
+        }
+    }
+}
+
+void
+sort_edge_blocks_by_nodelet()
+{
+    hooks_region_begin("sort_edge_blocks_by_nodelet");
+    emu_1d_array_apply(G.vertex_out_degree, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 8),
+        sort_edge_blocks_by_nodelet_worker
     );
     hooks_region_end();
 }

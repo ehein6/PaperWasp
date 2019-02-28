@@ -228,24 +228,24 @@ mark_queue_neighbors_spawner(sliding_queue * queue)
     ack_control_reenable_acks();
 }
 
-// For each vertex in the graph, detect if it was assigned a parent in this iteration
-static void
-populate_next_frontier(long * array, long begin, long end, va_list args)
-{
-    long local_scout_count = 0;
-    for (long i = begin; i < end; i += NODELETS()) {
-        if (HYBRID_BFS.parent[i] < 0 && HYBRID_BFS.new_parent[i] >= 0) {
-            // Update count with degree of new vertex
-            local_scout_count += -HYBRID_BFS.parent[i];
-            // Set parent
-            HYBRID_BFS.parent[i] = HYBRID_BFS.new_parent[i];
-            // Add to the queue for the next frontier
-            sliding_queue_push_back(&HYBRID_BFS.queue, i);
+    // For each vertex in the graph, detect if it was assigned a parent in this iteration
+    static void
+    populate_next_frontier(long * array, long begin, long end, va_list args)
+    {
+        long local_scout_count = 0;
+        for (long i = begin; i < end; i += NODELETS()) {
+            if (HYBRID_BFS.parent[i] < 0 && HYBRID_BFS.new_parent[i] >= 0) {
+                // Update count with degree of new vertex
+                local_scout_count += -HYBRID_BFS.parent[i];
+                // Set parent
+                HYBRID_BFS.parent[i] = HYBRID_BFS.new_parent[i];
+                // Add to the queue for the next frontier
+                sliding_queue_push_back(&HYBRID_BFS.queue, i);
+            }
         }
+        // Update global count
+        REMOTE_ADD(&HYBRID_BFS.scout_count, local_scout_count);
     }
-    // Update global count
-    REMOTE_ADD(&HYBRID_BFS.scout_count, local_scout_count);
-}
 
 void
 top_down_step_with_remote_writes()
