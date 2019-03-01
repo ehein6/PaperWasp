@@ -242,6 +242,9 @@ int main(int argc, char ** argv)
     // Initialize RNG with deterministic seed
     lcg_init(&lcg_state, 0);
 
+    long num_edges_traversed_all_trials = 0;
+    double time_ms_all_trials = 0;
+
     long source;
     for (long s = 0; s < args.num_trials; ++s) {
         // Randomly pick a source vertex with positive degree
@@ -269,6 +272,8 @@ int main(int argc, char ** argv)
         }
         // Output results
         long num_edges_traversed = hybrid_bfs_count_num_traversed_edges();
+        num_edges_traversed_all_trials += num_edges_traversed;
+        time_ms_all_trials += time_ms;
         LOG("Traversed %li edges in %3.2f ms, %3.2f MTEPS \n",
             num_edges_traversed,
             time_ms,
@@ -279,5 +284,10 @@ int main(int argc, char ** argv)
             hybrid_bfs_data_clear();
         }
     }
+
+    LOG("Mean performance over all trials: %3.2f MTEPS \n",
+        (1e-6 * num_edges_traversed_all_trials) / (time_ms_all_trials / 1000)
+    );
+
     return 0;
 }
