@@ -302,7 +302,7 @@ visit(long src, long dst)
 }
 
 // Using noinline to minimize the size of the migrating context
-static noinline void
+static __attribute__((always_inline)) inline void
 frontier_visitor(long src, long * edges_begin, long * edges_end)
 {
     long e1, e2, e3, e4;
@@ -328,7 +328,7 @@ frontier_visitor(long src, long * edges_begin, long * edges_end)
     }
 }
 
-void
+static inline void
 explore_frontier_parallel(long src, long * edges_begin, long * edges_end)
 {
     long degree = edges_end - edges_begin;
@@ -348,12 +348,6 @@ explore_frontier_parallel(long src, long * edges_begin, long * edges_end)
 }
 
 void
-explore_frontier_in_eb(long src, edge_block * eb)
-{
-    explore_frontier_parallel(src, eb->edges, eb->edges + eb->num_edges);
-}
-
-void
 explore_frontier_worker(sliding_queue * queue, long * queue_pos)
 {
     const long queue_end = queue->end;
@@ -361,19 +355,9 @@ explore_frontier_worker(sliding_queue * queue, long * queue_pos)
     long v = ATOMIC_ADDMS(queue_pos, 1);
     for (; v < queue_end; v = ATOMIC_ADDMS(queue_pos, 1)) {
         long src = queue_buffer[v];
-        // How big is this vertex?
-        if (is_heavy_out(src)) {
-            // Heavy vertex, spawn a thread for each remote edge block
-            edge_block * eb = G.vertex_out_neighbors[src].repl_edge_block;
-            for (long i = 0; i < NODELETS(); ++i) {
-                edge_block * remote_eb = mw_get_nth(eb, i);
-                cilk_spawn_at(remote_eb) explore_frontier_in_eb(src, remote_eb);
-            }
-        } else {
-            long * edges_begin = G.vertex_out_neighbors[src].local_edges;
-            long * edges_end = edges_begin + G.vertex_out_degree[src];
-            explore_frontier_parallel(src, edges_begin, edges_end);
-        }
+        long * edges_begin = G.vertex_out_neighbors[src].local_edges;
+        long * edges_end = edges_begin + G.vertex_out_degree[src];
+        explore_frontier_parallel(src, edges_begin, edges_end);
     }
 }
 
