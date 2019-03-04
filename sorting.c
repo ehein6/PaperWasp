@@ -116,6 +116,7 @@ emu_quick_sort_longs(long * begin, long * end, Comparator compare)
 int
 is_sorted(long * begin, long * end, Comparator compare)
 {
+    if (begin == end) { return 1; }
     for (long * i = begin; i < end-1; ++i) {
         if (compare(i, i + 1) > 0) {
             return 0;
