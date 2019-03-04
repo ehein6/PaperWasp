@@ -8,6 +8,7 @@
 
 #include "graph.h"
 #include "load_edge_list.h"
+#include "sorting.h"
 
 // Global, replicated struct for storing pointers to graph data structures
 replicated graph G;
@@ -273,7 +274,9 @@ compare_nodelets(const void * a, const void * b)
 static void
 sort_edge_block_by_nodelet(long * edges_begin, long * edges_end)
 {
-    qsort(edges_begin, edges_end-edges_begin, sizeof(long), compare_nodelets);
+//    qsort(edges_begin, edges_end-edges_begin, sizeof(long), compare_nodelets);
+    emu_quick_sort_longs(edges_begin, edges_end, compare_nodelets);
+//    assert(is_sorted(edges_begin, edges_end, compare_nodelets));
 }
 
 static void

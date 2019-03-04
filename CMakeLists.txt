@@ -32,6 +32,8 @@ add_library(graph_loader OBJECT
     graph_from_edge_list.c
     load_edge_list.h
     load_edge_list.c
+    sorting.h
+    sorting.c
 )
 
 add_executable(hybrid_bfs
