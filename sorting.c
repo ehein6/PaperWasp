@@ -41,7 +41,7 @@ partition (long * begin, long * end, Comparator compare)
 // no function calls.
 //
 // Adapted from https://www.geeksforgeeks.org/iterative-quick-sort/
-void
+static void
 iterative_quick_sort_longs(long * begin, long * end, Comparator compare)
 {
     // Create an auxiliary stack
@@ -81,29 +81,36 @@ iterative_quick_sort_longs(long * begin, long * end, Comparator compare)
     }
 }
 
-void
-emu_quick_sort_longs(long * begin, long * end, Comparator compare)
+static void
+quick_sort_longs(long * begin, long * end, Comparator compare, long depth)
 {
     // Arrays with fewer than this many elements will use serial sort
     const long grain = 32768;
+    const long max_depth = 6;
     ptrdiff_t count = end - begin;
     if (count <= 0) {
         return;
-    } else if (count > grain) {
+    } else if (count > grain && depth < max_depth) {
         // Partition the array around a pivot
         long * p = partition(begin, end, compare);
         // Spawn thread to sort the left half
         if (begin < p - 1) {
-            cilk_spawn emu_quick_sort_longs(begin, p - 1, compare);
+            cilk_spawn quick_sort_longs(begin, p - 1, compare, depth+1);
         }
         // Recurse into the right half.
         if (p + 1 < end) {
-            emu_quick_sort_longs(p + 1, end, compare);
+            quick_sort_longs(p + 1, end, compare, depth+1);
         }
     } else {
         // Sort using a non-recursive, serial algorithm
         iterative_quick_sort_longs(begin, end, compare);
     }
+}
+
+void
+emu_quick_sort_longs(long * begin, long * end, Comparator compare)
+{
+    quick_sort_longs(begin, end, compare, 0);
 }
 
 int
