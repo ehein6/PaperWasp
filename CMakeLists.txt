@@ -51,3 +51,4 @@ add_executable(tc
     tc.c
     tc_main.c
 )
+install(TARGETS hybrid_bfs tc RUNTIME DESTINATION ".")
