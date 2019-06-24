@@ -574,13 +574,24 @@ void print_graph_distribution()
         }
         printf("\n");
     }
-    // Bottom two rows: nodelet number, stacked vertically
-    printf("       "); // Spacer
-    for (long nlet = 0; nlet < NODELETS(); ++nlet) {
-        if (nlet > 10) { printf("%li", nlet / 10); }
-        else           { printf(" "); }
+
+    if (NODELETS() >= 100) {
+        // Bottom rows: nodelet number, stacked vertically
+        printf("       "); // Spacer
+        for (long nlet = 0; nlet < NODELETS(); ++nlet) {
+            if (nlet >= 100) { printf("%li", nlet / 100); }
+            else             { printf(" "); }
+        }
+        printf("\n");
     }
-    printf("\n");
+    if (NODELETS() >= 10) {
+        printf("       "); // Spacer
+        for (long nlet = 0; nlet < NODELETS(); ++nlet) {
+            if (nlet >= 10) { printf("%li", (nlet / 10) % 10); }
+            else           { printf(" "); }
+        }
+        printf("\n");
+    }
     printf("       "); // Spacer
     for (long nlet = 0; nlet < NODELETS(); ++nlet) {
         printf("%li", nlet % 10);
