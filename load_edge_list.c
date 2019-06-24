@@ -229,7 +229,6 @@ scatter_edges(edge_list * el)
     emu_local_for(0, el->num_edges, LOCAL_GRAIN_MIN(el->num_edges, 256),
         scatter_edge_list_worker, el
     );
-    hooks_region_end();
 }
 
 // Initializes the distributed edge list EL from the file
