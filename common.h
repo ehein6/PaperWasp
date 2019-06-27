@@ -31,3 +31,24 @@ init_striped_array(long ** ptr, long n)
     assert(tmp);
     replicated_init_ptr(ptr, tmp);
 }
+
+#ifndef __le64__
+static inline void *
+get_nth(void * repladdr, long n)
+{ return repladdr; }
+#else
+static inline void *
+get_nth(void * repladdr, long n)
+{
+    if (n < 0 || n >= NODELETS()) { return NULL; }
+    unsigned long ptr = (unsigned long)repladdr;
+    return (void*)(ptr
+        // Change to view 1
+        | (0x1UL<<__MW_VIEW_SHIFT__)
+        // Set node number
+        | (n <<__MW_NODE_BITS__)
+        // Preserve shared bit
+        | ((ptr) & __MW_VIEW_SHARED__)
+    );
+}
+#endif

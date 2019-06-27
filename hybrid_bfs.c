@@ -39,8 +39,8 @@ queue_to_replicated_bitmap(sliding_queue * q, bitmap * b)
 {
     // Transfer entries from the queue to the bitmap on each nodelet
     for (long nlet = 0; nlet < NODELETS(); ++nlet) {
-        sliding_queue * remote_q = mw_get_nth(q, nlet);
-        bitmap * remote_b = mw_get_nth(b, nlet);
+        sliding_queue * remote_q = get_nth(q, nlet);
+        bitmap * remote_b = get_nth(b, nlet);
         cilk_spawn_at(remote_q) queue_to_bitmap(remote_q, remote_b);
     }
     // Syncronize all bitmaps
@@ -97,7 +97,7 @@ scout_count_allreduce()
     // Add up all replicated copies
     long sum = 0;
     for (long nlet = 0; nlet < NODELETS(); ++nlet) {
-        long local_scout_count = *(long*)mw_get_nth(&HYBRID_BFS.scout_count, nlet);
+        long local_scout_count = *(long*)get_nth(&HYBRID_BFS.scout_count, nlet);
         sum += local_scout_count;
     }
     // Set all copies to the sum
@@ -198,7 +198,7 @@ mark_queue_neighbors_worker(sliding_queue * queue, long * queue_pos)
             // Heavy vertex, spawn a thread for each remote edge block
             edge_block * eb = G.vertex_out_neighbors[src].repl_edge_block;
             for (long i = 0; i < NODELETS(); ++i) {
-                edge_block * remote_eb = mw_get_nth(eb, i);
+                edge_block * remote_eb = get_nth(eb, i);
                 cilk_spawn_at(remote_eb) mark_neighbors_in_eb(src, remote_eb);
             }
         } else {
@@ -253,7 +253,7 @@ top_down_step_with_remote_writes()
     // Spawn a thread on each nodelet to process the local queue
     // For each neighbor, write your vertex ID to new_parent
     for (long n = 0; n < NODELETS(); ++n) {
-        sliding_queue * local_queue = mw_get_nth(&HYBRID_BFS.queue, n);
+        sliding_queue * local_queue = get_nth(&HYBRID_BFS.queue, n);
         cilk_spawn_at(local_queue) mark_queue_neighbors_spawner(local_queue);
     }
     cilk_sync;
@@ -384,7 +384,7 @@ top_down_step_with_migrating_threads()
     // For each neighbor without a parent, add self as parent and append to queue
     mw_replicated_init(&HYBRID_BFS.scout_count, 0);
     for (long n = 0; n < NODELETS(); ++n) {
-        sliding_queue * local_queue = mw_get_nth(&HYBRID_BFS.queue, n);
+        sliding_queue * local_queue = get_nth(&HYBRID_BFS.queue, n);
         cilk_spawn_at(local_queue) explore_local_frontier(local_queue);
     }
     cilk_sync;
@@ -396,7 +396,7 @@ dump_queue_stats()
 {
     printf("Queue contents: ");
     for (long n = 0; n < NODELETS(); ++n) {
-        sliding_queue * local_queue = mw_get_nth(&HYBRID_BFS.queue, n);
+        sliding_queue * local_queue = get_nth(&HYBRID_BFS.queue, n);
         for (long i = local_queue->start; i < local_queue->end; ++i) {
             printf("%li ", local_queue->buffer[i]);
         }
@@ -406,7 +406,7 @@ dump_queue_stats()
 
     printf("Bitmap contents: ");
     for (long n = 0; n < NODELETS(); ++n) {
-        bitmap * local_bitmap = mw_get_nth(&HYBRID_BFS.frontier, n);
+        bitmap * local_bitmap = get_nth(&HYBRID_BFS.frontier, n);
         bitmap_dump(local_bitmap);
     }
     printf("\n");
@@ -414,7 +414,7 @@ dump_queue_stats()
 
     printf("Frontier size per nodelet: ");
     for (long n = 0; n < NODELETS(); ++n) {
-        sliding_queue * local_queue = mw_get_nth(&HYBRID_BFS.queue, n);
+        sliding_queue * local_queue = get_nth(&HYBRID_BFS.queue, n);
         printf("%li ", local_queue->end - local_queue->start);
     }
     printf("\n");
@@ -423,7 +423,7 @@ dump_queue_stats()
     printf("Total out-degree per nodelet: ");
     for (long n = 0; n < NODELETS(); ++n) {
         long degree_sum = 0;
-        sliding_queue * local_queue = mw_get_nth(&HYBRID_BFS.queue, n);
+        sliding_queue * local_queue = get_nth(&HYBRID_BFS.queue, n);
         for (long i = local_queue->start; i < local_queue->end; ++i) {
             long v = local_queue->buffer[i];
             degree_sum += G.vertex_out_degree[v];
@@ -515,7 +515,7 @@ search_for_parent_in_remote_ebs(long v, long * awake_count)
     long num_found = 0;
     edge_block * eb = G.vertex_out_neighbors[v].repl_edge_block;
     for (long i = 0; i < NODELETS(); ++i) {
-        edge_block * remote_eb = mw_get_nth(eb, i);
+        edge_block * remote_eb = get_nth(eb, i);
         cilk_spawn_at(remote_eb) search_for_parent_in_eb(v, remote_eb, &num_found);
     }
     cilk_sync;
@@ -576,7 +576,7 @@ hybrid_bfs_run_beamer (long source, long alpha, long beta)
     assert(source < G.num_vertices);
 
     // Start with the source vertex in the first frontier, at level 0, and mark it as visited
-    sliding_queue_push_back(mw_get_nth(&HYBRID_BFS.queue, 0), source);
+    sliding_queue_push_back(get_nth(&HYBRID_BFS.queue, 0), source);
     sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
     HYBRID_BFS.parent[source] = source;
 
@@ -631,7 +631,7 @@ hybrid_bfs_run_with_migrating_threads(long source)
     assert(source < G.num_vertices);
 
     // Start with the source vertex in the first frontier, at level 0, and mark it as visited
-    sliding_queue_push_back(mw_get_nth(&HYBRID_BFS.queue, 0), source);
+    sliding_queue_push_back(get_nth(&HYBRID_BFS.queue, 0), source);
     sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
     HYBRID_BFS.parent[source] = source;
 
@@ -653,7 +653,7 @@ hybrid_bfs_run_with_remote_writes(long source)
     assert(source < G.num_vertices);
 
     // Start with the source vertex in the first frontier, at level 0, and mark it as visited
-    sliding_queue_push_back(mw_get_nth(&HYBRID_BFS.queue, 0), source);
+    sliding_queue_push_back(get_nth(&HYBRID_BFS.queue, 0), source);
     sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
     HYBRID_BFS.parent[source] = source;
 
@@ -678,7 +678,7 @@ hybrid_bfs_run_with_remote_writes_hybrid(long source, long alpha, long beta)
     assert(source < G.num_vertices);
 
     // Start with the source vertex in the first frontier, at level 0, and mark it as visited
-    sliding_queue_push_back(mw_get_nth(&HYBRID_BFS.queue, 0), source);
+    sliding_queue_push_back(get_nth(&HYBRID_BFS.queue, 0), source);
     sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
     HYBRID_BFS.parent[source] = source;
 
