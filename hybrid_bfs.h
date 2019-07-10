@@ -13,9 +13,9 @@ typedef struct hybrid_bfs_data {
     // Used to store vertices to visit in the next frontier
     sliding_queue queue;
     // Bitmap representation of the current frontier
-    bitmap frontier;
+    long * frontier;
     // Bitmap representation of the next frontier
-    bitmap next_frontier;
+    long * next_frontier;
 } hybrid_bfs_data;
 
 // Global replicated struct with BFS data pointers

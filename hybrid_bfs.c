@@ -26,48 +26,60 @@ MY_LOCAL_GRAIN_MIN(long n, long min_grain)
 }
 
 void
-queue_to_bitmap(sliding_queue * q, bitmap * b)
+queue_to_bitmap_worker(sliding_queue * q, long * b)
 {
     // TODO parallelize with emu_local_for
     for (long i = q->start; i < q->end; ++i) {
-        bitmap_set_bit(b, q->buffer[i]);
+        b[q->buffer[i]] = 1;
     }
 }
 
 void
-queue_to_replicated_bitmap(sliding_queue * q, bitmap * b)
+queue_to_bitmap()
 {
     // Transfer entries from the queue to the bitmap on each nodelet
     for (long nlet = 0; nlet < NODELETS(); ++nlet) {
-        sliding_queue * remote_q = get_nth(q, nlet);
-        bitmap * remote_b = get_nth(b, nlet);
-        cilk_spawn_at(remote_q) queue_to_bitmap(remote_q, remote_b);
+        sliding_queue * remote_q = get_nth(&HYBRID_BFS.queue, nlet);
+        cilk_spawn_at(remote_q) queue_to_bitmap_worker(remote_q, HYBRID_BFS.frontier);
     }
-    // Syncronize all bitmaps
-    cilk_sync;
-    bitmap_replicated_sync(b);
 }
 
 void
 bitmap_to_queue_worker(long * array, long begin, long end, va_list args)
 {
-    bitmap * b = va_arg(args, bitmap*);
+    long * b = va_arg(args, long*);
     sliding_queue * q = va_arg(args, sliding_queue *);
     for (long v = begin; v < end; v += NODELETS()){
-        if (bitmap_get_bit(b, v)) {
-            sliding_queue_push_back(q, v);
-        }
+        if (b[v]) { sliding_queue_push_back(q, v); }
     }
 }
 
 void
-replicated_bitmap_to_queue(bitmap * b, sliding_queue * q)
+bitmap_to_queue()
 {
     // TODO parallelize with emu_local_for
     emu_1d_array_apply(G.vertex_out_degree, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 64),
-        bitmap_to_queue_worker, b, q
+        bitmap_to_queue_worker, HYBRID_BFS.frontier, &HYBRID_BFS.queue
     );
 }
+
+void
+swap_bitmaps()
+{
+    // TODO we should have a mw_repl_swap primitive
+    long ** a = &HYBRID_BFS.frontier;
+    long ** b = &HYBRID_BFS.next_frontier;
+
+    for (long nlet = 0; nlet < NODELETS(); ++nlet) {
+        // tmp = b
+        long * tmp = *(long**)get_nth(b, nlet);
+        // b = a
+        *b = *(long**)get_nth(a, nlet);
+        // a = tmp
+        *(long**)get_nth(a, nlet) = tmp;
+    }
+}
+
 
 static void
 init_parent_worker(long * array, long begin, long end, va_list args)
@@ -80,15 +92,28 @@ init_parent_worker(long * array, long begin, long end, va_list args)
     }
 }
 
+static void
+clear_bitmap_worker(long * array, long begin, long end, va_list args)
+{
+    for (long v = begin; v < end; v += NODELETS()) {
+        array[v] = 0;
+    }
+}
+
 void
 hybrid_bfs_data_clear()
 {
-    emu_1d_array_apply(HYBRID_BFS.parent, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 128),
+    long grain = GLOBAL_GRAIN_MIN(G.num_vertices, 128);
+    emu_1d_array_apply(HYBRID_BFS.parent, G.num_vertices, grain,
         init_parent_worker
     );
     sliding_queue_replicated_reset(&HYBRID_BFS.queue);
-    bitmap_replicated_clear(&HYBRID_BFS.frontier);
-    bitmap_replicated_clear(&HYBRID_BFS.next_frontier);
+    emu_1d_array_apply(HYBRID_BFS.frontier, G.num_vertices, grain,
+        clear_bitmap_worker
+    );
+    emu_1d_array_apply(HYBRID_BFS.next_frontier, G.num_vertices, grain,
+        clear_bitmap_worker
+    );
 }
 
 static void
@@ -110,8 +135,8 @@ hybrid_bfs_init()
     init_striped_array(&HYBRID_BFS.parent, G.num_vertices);
     init_striped_array(&HYBRID_BFS.new_parent, G.num_vertices);
     sliding_queue_replicated_init(&HYBRID_BFS.queue, G.num_vertices);
-    bitmap_replicated_init(&HYBRID_BFS.frontier, G.num_vertices);
-    bitmap_replicated_init(&HYBRID_BFS.next_frontier, G.num_vertices);
+    init_striped_array(&HYBRID_BFS.frontier, G.num_vertices);
+    init_striped_array(&HYBRID_BFS.next_frontier, G.num_vertices);
 
     hybrid_bfs_data_clear();
     ack_control_init();
@@ -123,8 +148,8 @@ hybrid_bfs_deinit()
     mw_free(HYBRID_BFS.parent);
     mw_free(HYBRID_BFS.new_parent);
     sliding_queue_replicated_deinit(&HYBRID_BFS.queue);
-    bitmap_replicated_deinit(&HYBRID_BFS.frontier);
-    bitmap_replicated_deinit(&HYBRID_BFS.next_frontier);
+    mw_free(&HYBRID_BFS.frontier);
+    mw_free(&HYBRID_BFS.next_frontier);
 }
 
 
@@ -464,13 +489,13 @@ search_for_parent(long child, long * edges_begin, long * edges_end, long * awake
     for (long * e = edges_begin; e < edges_end; ++e) {
         long parent = *e;
         // If the vertex is in the frontier...
-        if (bitmap_get_bit(&HYBRID_BFS.frontier, parent)) {
+        if ((HYBRID_BFS.frontier[parent])) {
             // Claim as a parent
             HYBRID_BFS.parent[child] = parent;
             // Increment number of vertices woken up on this step
             REMOTE_ADD(awake_count, 1);
             // Put myself in the frontier
-            bitmap_set_bit(&HYBRID_BFS.next_frontier, child);
+            HYBRID_BFS.next_frontier[child] = 1;
             // No need to keep looking for a parent
             break;
         }
@@ -555,12 +580,13 @@ bottom_up_step()
 {
     long awake_count = 0;
     // TODO we can do the clear in parallel with other stuff
-    bitmap_replicated_clear(&HYBRID_BFS.next_frontier);
+    emu_1d_array_apply(HYBRID_BFS.next_frontier, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 128),
+        clear_bitmap_worker
+    );
     emu_1d_array_apply(HYBRID_BFS.parent, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 64),
         search_for_parent_worker, &awake_count
     );
     // TODO we can start the sync early at each nodelet once all local vertices are done
-    bitmap_replicated_sync(&HYBRID_BFS.next_frontier);
     return awake_count;
 }
 
@@ -589,7 +615,7 @@ hybrid_bfs_run_beamer (long source, long alpha, long beta)
             long awake_count, old_awake_count;
             // Convert sliding queue to bitmap
             // hooks_region_begin("queue_to_bitmap");
-            queue_to_replicated_bitmap(&HYBRID_BFS.queue, &HYBRID_BFS.frontier);
+            queue_to_bitmap();
             // hooks_region_end();
             awake_count = sliding_queue_combined_size(&HYBRID_BFS.queue);
             sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
@@ -599,13 +625,13 @@ hybrid_bfs_run_beamer (long source, long alpha, long beta)
                 // hooks_set_attr_i64("awake_count", awake_count);
                 // hooks_region_begin("bottom_up_step");
                 awake_count = bottom_up_step();
-                bitmap_replicated_swap(&HYBRID_BFS.frontier, &HYBRID_BFS.next_frontier);
+                swap_bitmaps();
                 // hooks_region_end();
             } while (awake_count >= old_awake_count ||
                     (awake_count > G.num_vertices / beta));
             // Convert back to a queue
             // hooks_region_begin("bitmap_to_queue");
-            replicated_bitmap_to_queue(&HYBRID_BFS.frontier, &HYBRID_BFS.queue);
+            bitmap_to_queue();
             sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
             // hooks_region_end();
             mw_replicated_init(&HYBRID_BFS.scout_count, 1);
