@@ -10,77 +10,6 @@
 // Global replicated struct with BFS data pointers
 replicated hybrid_bfs_data HYBRID_BFS;
 
-// HACK define inlinable versions of grain size functions
-// Will need to manually fix these for 3GC build
-static inline long
-MY_LOCAL_GRAIN(long n)
-{
-    long local_num_threads = 64 * 1;
-    return n > local_num_threads ? (n/local_num_threads) : 1;
-}
-static inline long
-MY_LOCAL_GRAIN_MIN(long n, long min_grain)
-{
-    long grain = MY_LOCAL_GRAIN(n);
-    return grain > min_grain ? grain : min_grain;
-}
-
-void
-queue_to_bitmap_worker(sliding_queue * q, long * b)
-{
-    // TODO parallelize with emu_local_for
-    for (long i = q->start; i < q->end; ++i) {
-        b[q->buffer[i]] = 1;
-    }
-}
-
-void
-queue_to_bitmap()
-{
-    // Transfer entries from the queue to the bitmap on each nodelet
-    for (long nlet = 0; nlet < NODELETS(); ++nlet) {
-        sliding_queue * remote_q = get_nth(&HYBRID_BFS.queue, nlet);
-        cilk_spawn_at(remote_q) queue_to_bitmap_worker(remote_q, HYBRID_BFS.frontier);
-    }
-}
-
-void
-bitmap_to_queue_worker(long * array, long begin, long end, va_list args)
-{
-    long * b = va_arg(args, long*);
-    sliding_queue * q = va_arg(args, sliding_queue *);
-    for (long v = begin; v < end; v += NODELETS()){
-        if (b[v]) { sliding_queue_push_back(q, v); }
-    }
-}
-
-void
-bitmap_to_queue()
-{
-    // TODO parallelize with emu_local_for
-    emu_1d_array_apply(G.vertex_out_degree, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 64),
-        bitmap_to_queue_worker, HYBRID_BFS.frontier, &HYBRID_BFS.queue
-    );
-}
-
-void
-swap_bitmaps()
-{
-    // TODO we should have a mw_repl_swap primitive
-    long ** a = &HYBRID_BFS.frontier;
-    long ** b = &HYBRID_BFS.next_frontier;
-
-    for (long nlet = 0; nlet < NODELETS(); ++nlet) {
-        // tmp = b
-        long * tmp = *(long**)get_nth(b, nlet);
-        // b = a
-        *b = *(long**)get_nth(a, nlet);
-        // a = tmp
-        *(long**)get_nth(a, nlet) = tmp;
-    }
-}
-
-
 static void
 init_parent_worker(long * array, long begin, long end, va_list args)
 {
@@ -92,13 +21,6 @@ init_parent_worker(long * array, long begin, long end, va_list args)
     }
 }
 
-static void
-clear_bitmap_worker(long * array, long begin, long end, va_list args)
-{
-    for (long v = begin; v < end; v += NODELETS()) {
-        array[v] = 0;
-    }
-}
 
 void
 hybrid_bfs_data_clear()
@@ -108,12 +30,6 @@ hybrid_bfs_data_clear()
         init_parent_worker
     );
     sliding_queue_replicated_reset(&HYBRID_BFS.queue);
-    emu_1d_array_apply(HYBRID_BFS.frontier, G.num_vertices, grain,
-        clear_bitmap_worker
-    );
-    emu_1d_array_apply(HYBRID_BFS.next_frontier, G.num_vertices, grain,
-        clear_bitmap_worker
-    );
 }
 
 static void
@@ -135,8 +51,6 @@ hybrid_bfs_init()
     init_striped_array(&HYBRID_BFS.parent, G.num_vertices);
     init_striped_array(&HYBRID_BFS.new_parent, G.num_vertices);
     sliding_queue_replicated_init(&HYBRID_BFS.queue, G.num_vertices);
-    init_striped_array(&HYBRID_BFS.frontier, G.num_vertices);
-    init_striped_array(&HYBRID_BFS.next_frontier, G.num_vertices);
 
     hybrid_bfs_data_clear();
     ack_control_init();
@@ -148,8 +62,6 @@ hybrid_bfs_deinit()
     mw_free(HYBRID_BFS.parent);
     mw_free(HYBRID_BFS.new_parent);
     sliding_queue_replicated_deinit(&HYBRID_BFS.queue);
-    mw_free(&HYBRID_BFS.frontier);
-    mw_free(&HYBRID_BFS.next_frontier);
 }
 
 
@@ -253,24 +165,24 @@ mark_queue_neighbors_spawner(sliding_queue * queue)
     ack_control_reenable_acks();
 }
 
-    // For each vertex in the graph, detect if it was assigned a parent in this iteration
-    static void
-    populate_next_frontier(long * array, long begin, long end, va_list args)
-    {
-        long local_scout_count = 0;
-        for (long i = begin; i < end; i += NODELETS()) {
-            if (HYBRID_BFS.parent[i] < 0 && HYBRID_BFS.new_parent[i] >= 0) {
-                // Update count with degree of new vertex
-                local_scout_count += -HYBRID_BFS.parent[i];
-                // Set parent
-                HYBRID_BFS.parent[i] = HYBRID_BFS.new_parent[i];
-                // Add to the queue for the next frontier
-                sliding_queue_push_back(&HYBRID_BFS.queue, i);
-            }
+// For each vertex in the graph, detect if it was assigned a parent in this iteration
+static void
+populate_next_frontier(long * array, long begin, long end, va_list args)
+{
+    long local_scout_count = 0;
+    for (long i = begin; i < end; i += NODELETS()) {
+        if (HYBRID_BFS.parent[i] < 0 && HYBRID_BFS.new_parent[i] >= 0) {
+            // Update count with degree of new vertex
+            local_scout_count += -HYBRID_BFS.parent[i];
+            // Set parent
+            HYBRID_BFS.parent[i] = HYBRID_BFS.new_parent[i];
+            // Add to the queue for the next frontier
+            sliding_queue_push_back(&HYBRID_BFS.queue, i);
         }
-        // Update global count
-        REMOTE_ADD(&HYBRID_BFS.scout_count, local_scout_count);
     }
+    // Update global count
+    REMOTE_ADD(&HYBRID_BFS.scout_count, local_scout_count);
+}
 
 void
 top_down_step_with_remote_writes()
@@ -429,14 +341,6 @@ dump_queue_stats()
     printf("\n");
     fflush(stdout);
 
-    printf("Bitmap contents: ");
-    for (long n = 0; n < NODELETS(); ++n) {
-        bitmap * local_bitmap = get_nth(&HYBRID_BFS.frontier, n);
-        bitmap_dump(local_bitmap);
-    }
-    printf("\n");
-    fflush(stdout);
-
     printf("Frontier size per nodelet: ");
     for (long n = 0; n < NODELETS(); ++n) {
         sliding_queue * local_queue = get_nth(&HYBRID_BFS.queue, n);
@@ -465,8 +369,7 @@ dump_queue_stats()
  * Bottom-up BFS step
  * For each vertex that is not yet a part of the BFS tree,
  * check all in-neighbors to see if they are in the current frontier
- * using a replicated bitmap.
- * If a parent is found, put the child in the bitmap for the next frontier
+ * If a parent is found, put the child in the next frontier
  * Returns the number of vertices that found a parent (size of next frontier)
  *
  * Overview of bottom_up_step()
@@ -489,13 +392,11 @@ search_for_parent(long child, long * edges_begin, long * edges_end, long * awake
     for (long * e = edges_begin; e < edges_end; ++e) {
         long parent = *e;
         // If the vertex is in the frontier...
-        if ((HYBRID_BFS.frontier[parent])) {
+        if ((HYBRID_BFS.parent[parent] >= 0)) {
             // Claim as a parent
-            HYBRID_BFS.parent[child] = parent;
+            HYBRID_BFS.new_parent[child] = parent;
             // Increment number of vertices woken up on this step
             REMOTE_ADD(awake_count, 1);
-            // Put myself in the frontier
-            HYBRID_BFS.next_frontier[child] = 1;
             // No need to keep looking for a parent
             break;
         }
@@ -506,7 +407,7 @@ static inline void
 search_for_parent_parallel(long child, long * edges_begin, long * edges_end, long * awake_count)
 {
     long degree = edges_end - edges_begin;
-    long grain = MY_LOCAL_GRAIN_MIN(degree, 128);
+    long grain = 512;
     if (degree <= grain) {
         // Low-degree local vertex, handle in this thread
         search_for_parent(child, edges_begin, edges_end, awake_count);
@@ -579,14 +480,14 @@ static long
 bottom_up_step()
 {
     long awake_count = 0;
-    // TODO we can do the clear in parallel with other stuff
-    emu_1d_array_apply(HYBRID_BFS.next_frontier, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 128),
-        clear_bitmap_worker
-    );
-    emu_1d_array_apply(HYBRID_BFS.parent, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 64),
+    // ALl unconnected vertices search for a neighbor in the frontier
+    emu_1d_array_apply(HYBRID_BFS.parent, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 128),
         search_for_parent_worker, &awake_count
     );
-    // TODO we can start the sync early at each nodelet once all local vertices are done
+    // Add to the queue all vertices that didn't have a parent before
+    emu_1d_array_apply(HYBRID_BFS.parent, G.num_vertices, GLOBAL_GRAIN_MIN(G.num_vertices, 128),
+        populate_next_frontier
+    );
     return awake_count;
 }
 
@@ -613,27 +514,17 @@ hybrid_bfs_run_beamer (long source, long alpha, long beta)
     while (!sliding_queue_all_empty(&HYBRID_BFS.queue)) {
         if (HYBRID_BFS.scout_count > edges_to_check / alpha) {
             long awake_count, old_awake_count;
-            // Convert sliding queue to bitmap
-            // hooks_region_begin("queue_to_bitmap");
-            queue_to_bitmap();
-            // hooks_region_end();
             awake_count = sliding_queue_combined_size(&HYBRID_BFS.queue);
-            sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
             // Do bottom-up steps for a while
             do {
                 old_awake_count = awake_count;
                 // hooks_set_attr_i64("awake_count", awake_count);
                 // hooks_region_begin("bottom_up_step");
                 awake_count = bottom_up_step();
-                swap_bitmaps();
+                sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
                 // hooks_region_end();
             } while (awake_count >= old_awake_count ||
                     (awake_count > G.num_vertices / beta));
-            // Convert back to a queue
-            // hooks_region_begin("bitmap_to_queue");
-            bitmap_to_queue();
-            sliding_queue_slide_all_windows(&HYBRID_BFS.queue);
-            // hooks_region_end();
             mw_replicated_init(&HYBRID_BFS.scout_count, 1);
         } else {
             edges_to_check -= HYBRID_BFS.scout_count;

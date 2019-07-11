@@ -2,7 +2,7 @@
 
 #include "graph.h"
 #include "sliding_queue.h"
-#include "bitmap.h"
+
 typedef struct hybrid_bfs_data {
     // Tracks the sum of the degrees of vertices in the frontier
     long scout_count;
@@ -12,10 +12,6 @@ typedef struct hybrid_bfs_data {
     long * new_parent;
     // Used to store vertices to visit in the next frontier
     sliding_queue queue;
-    // Bitmap representation of the current frontier
-    long * frontier;
-    // Bitmap representation of the next frontier
-    long * next_frontier;
 } hybrid_bfs_data;
 
 // Global replicated struct with BFS data pointers
