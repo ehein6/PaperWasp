@@ -1,5 +1,7 @@
 #pragma once
 
+#include "common.h"
+
 typedef struct sliding_queue
 {
     // Next available slot in the queue
@@ -76,7 +78,7 @@ static inline void
 sliding_queue_slide_all_windows(sliding_queue *self)
 {
     for (long n = 0; n < NODELETS(); ++n) {
-        sliding_queue * local = mw_get_nth(self, n);
+        sliding_queue * local = get_nth(self, n);
         sliding_queue_slide_window(local);
     }
 }
@@ -104,7 +106,7 @@ static inline bool
 sliding_queue_all_empty(sliding_queue * self)
 {
     for (long n = 0; n < NODELETS(); ++n) {
-        sliding_queue * local = mw_get_nth(self, n);
+        sliding_queue * local = get_nth(self, n);
         if (!sliding_queue_is_empty(local)) {
             return false;
         }
@@ -117,7 +119,7 @@ sliding_queue_combined_size(sliding_queue * self)
 {
     long size = 0;
     for (long n = 0; n < NODELETS(); ++n) {
-        sliding_queue * local = mw_get_nth(self, n);
+        sliding_queue * local = get_nth(self, n);
         REMOTE_ADD(&size, sliding_queue_size(local));
     }
     return size;
