@@ -291,5 +291,7 @@ int main(int argc, char ** argv)
         (1e-6 * num_edges_traversed_all_trials) / (time_ms_all_trials / 1000)
     );
 
+    hybrid_bfs_deinit();
+
     return 0;
 }
