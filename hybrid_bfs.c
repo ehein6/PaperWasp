@@ -385,7 +385,7 @@ dump_queue_stats()
  *
 */
 
-static void
+static __attribute__((always_inline)) inline void
 search_for_parent(long child, long * edges_begin, long * edges_end, long * awake_count)
 {
     // For each vertex connected to me...
@@ -467,7 +467,7 @@ search_for_parent_worker(long * array, long begin, long end, va_list args)
             } else {
                 long * edges_begin = G.vertex_out_neighbors[v].local_edges;
                 long * edges_end = edges_begin + G.vertex_out_degree[v];
-                search_for_parent_parallel(v, edges_begin, edges_end, &local_awake_count);
+                search_for_parent(v, edges_begin, edges_end, &local_awake_count);
             }
         }
     }
