@@ -32,6 +32,7 @@ init_striped_array(long ** ptr, long n)
     replicated_init_ptr(ptr, tmp);
 }
 
+// Inlineable version of mw_get_nth
 #ifndef __le64__
 static inline void *
 get_nth(void * repladdr, long n)
